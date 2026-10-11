@@ -21,10 +21,18 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS personalizados para auto-seleccionar texto, ocultar botones y congelar columnas 1 y 2
+# Estilos CSS personalizados para limpiar casillas, auto-seleccionar texto y congelar columna 1
 st.markdown("""
 <style>
-    /* Auto-selección completa del texto al hacer clic/tap en los campos de entrada */
+    /* Ocultar texto auxiliar/instrucciones dentro o debajo de las casillas ("Press Enter to submit form", etc.) */
+    [data-testid="stInputInstruction"], 
+    small[data-testid="stInputInstruction"], 
+    div[data-testid="InputInstruction"],
+    div[data-baseweb="typo-caption"] {
+        display: none !important;
+    }
+
+    /* Auto-selección visual de texto */
     div[data-baseweb="input"] input {
         text-align: center !important;
         font-size: 18px !important;
@@ -73,7 +81,7 @@ st.markdown("""
         color: #FFFFFF;
         text-align: center !important;
         vertical-align: middle !important;
-        padding: 10px 8px;
+        padding: 10px 12px;
         font-size: 13px;
         font-weight: 700;
         line-height: 1.25;
@@ -85,46 +93,28 @@ st.markdown("""
     .custom-table td {
         text-align: center !important;
         vertical-align: middle !important;
-        padding: 12px 8px;
+        padding: 12px 10px;
         font-size: 14px;
         white-space: nowrap;
         border-bottom: 1px solid #334155;
     }
 
-    /* --- FIJAR COLUMNA 1 (Rank) --- */
+    /* --- CONGELAR ÚNICAMENTE LA COLUMNA 1 (Institución Financiera) --- */
     .custom-table th:nth-child(1) {
         position: sticky;
         left: 0;
         z-index: 5;
         background-color: #1E293B;
-        min-width: 65px;
-        border-right: 1px solid #334155;
+        min-width: 150px;
+        border-right: 2px solid #64748B !important;
     }
     .custom-table td:nth-child(1) {
         position: sticky;
         left: 0;
         z-index: 3;
         background-color: #0F172A;
-        min-width: 65px;
-        border-right: 1px solid #334155;
-    }
-
-    /* --- FIJAR COLUMNA 2 (Institución Financiera) --- */
-    .custom-table th:nth-child(2) {
-        position: sticky;
-        left: 65px;
-        z-index: 5;
-        background-color: #1E293B;
-        border-right: 2px solid #64748B !important;
         min-width: 150px;
-    }
-    .custom-table td:nth-child(2) {
-        position: sticky;
-        left: 65px;
-        z-index: 3;
-        background-color: #0F172A;
         border-right: 2px solid #64748B !important;
-        min-width: 150px;
     }
 
     /* Mantenimiento del fondo opaco al alternar filas y hacer hover */
@@ -137,14 +127,22 @@ st.markdown("""
 </style>
 
 <script>
-    // Script JS para forzar la selección completa del número al tocar/enfocar el input
-    document.addEventListener('focusin', function(e) {
-        if (e.target && e.target.tagName === 'INPUT') {
-            setTimeout(function() {
-                e.target.select();
-            }, 30);
+    // JS para forzar la selección total del texto al tocar o enfocar la casilla en móvil o PC
+    (function() {
+        function autoSelectInput(e) {
+            if (e.target && e.target.tagName === 'INPUT') {
+                setTimeout(function() {
+                    try {
+                        e.target.select();
+                        e.target.setSelectionRange(0, 9999);
+                    } catch(err) {}
+                }, 50);
+            }
         }
-    });
+        document.addEventListener('focusin', autoSelectInput, true);
+        document.addEventListener('click', autoSelectInput, true);
+        document.addEventListener('touchstart', autoSelectInput, true);
+    })();
 </script>
 """, unsafe_allow_html=True)
 
@@ -250,7 +248,7 @@ with st.form(key="formulario_inversion"):
             "Capital a Invertir ($ USD)",
             min_value=1.0,
             value=None,
-            placeholder="5000",
+            placeholder="",
             step=1.0
         )
     with col2:
@@ -259,7 +257,7 @@ with st.form(key="formulario_inversion"):
             min_value=1,
             max_value=3600,
             value=None,
-            placeholder="180",
+            placeholder="",
             step=1
         )
     submit_button = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
@@ -284,7 +282,7 @@ else:
     # Fórmula de interés simple: Ganancia = Monto * (TNA / 100) * (Días / 360)
     filtrado['ganancia_estimada'] = monto * (filtrado['tasa_nominal_porcentaje'] / 100.0) * (plazo_dias / 360.0)
     
-    # Ordenar strictly por Tasa Nominal (TNA) descendente
+    # Ordenar estrictamente por Tasa Nominal (TNA) descendente
     top5 = filtrado.sort_values(
         by='tasa_nominal_porcentaje',
         ascending=False
@@ -297,19 +295,16 @@ else:
     ganador = top5.iloc[0]
     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-    # Construcción de la tabla con las columnas 1 y 2 congeladas (Sticky)
-    iconos = ["🥇 1", "🥈 2", "🥉 3", "4", "5"]
-    
+    # Construcción de la tabla (sin columna Rank, dejando 'Institución Financiera' como columna 1 fija)
     html_rows = ""
     for idx, row in top5.iterrows():
-        rank = iconos[idx]
         banco = row['banco']
         rango = f"{row['dias_minimo']} - {row['dias_maximo']} días"
         tna = f"{row['tasa_nominal_porcentaje']:.2f}%"
         ganancia = f"${row['ganancia_estimada']:,.2f}"
         
-        html_rows += f"<tr><td><strong>{rank}</strong></td><td><strong>{banco}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+        html_rows += f"<tr><td><strong>{banco}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
-    table_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Rank</th><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>"""
+    table_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>"""
 
     st.markdown(table_html, unsafe_allow_html=True)
