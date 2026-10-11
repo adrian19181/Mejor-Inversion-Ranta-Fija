@@ -21,10 +21,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS personalizados para limpiar casillas, auto-seleccionar texto y congelar columna 1
+# Estilos CSS personalizados para ocultar texto transparente (placeholder) y ajustar columna 1
 st.markdown("""
 <style>
-    /* Ocultar texto auxiliar/instrucciones dentro o debajo de las casillas ("Press Enter to submit form", etc.) */
+    /* Ocultar texto auxiliar e instrucciones ("Press Enter to submit form", etc.) */
     [data-testid="stInputInstruction"], 
     small[data-testid="stInputInstruction"], 
     div[data-testid="InputInstruction"],
@@ -32,7 +32,16 @@ st.markdown("""
         display: none !important;
     }
 
-    /* Auto-selección visual de texto */
+    /* Ocultar por completo las letras y números transparentes (placeholders) en las casillas */
+    input::-webkit-input-placeholder,
+    input::-moz-placeholder,
+    input:-ms-input-placeholder,
+    input::placeholder {
+        color: transparent !important;
+        opacity: 0 !important;
+    }
+
+    /* Auto-selección visual de texto y centrado en las casillas del formulario */
     div[data-baseweb="input"] input {
         text-align: center !important;
         font-size: 18px !important;
@@ -81,7 +90,7 @@ st.markdown("""
         color: #FFFFFF;
         text-align: center !important;
         vertical-align: middle !important;
-        padding: 10px 12px;
+        padding: 10px 8px;
         font-size: 13px;
         font-weight: 700;
         line-height: 1.25;
@@ -93,19 +102,22 @@ st.markdown("""
     .custom-table td {
         text-align: center !important;
         vertical-align: middle !important;
-        padding: 12px 10px;
+        padding: 10px 8px;
         font-size: 14px;
         white-space: nowrap;
         border-bottom: 1px solid #334155;
     }
 
-    /* --- CONGELAR ÚNICAMENTE LA COLUMNA 1 (Institución Financiera) --- */
+    /* --- CONGELAR ÚNICAMENTE LA COLUMNA 1 (Institución Financiera en 2 líneas) --- */
     .custom-table th:nth-child(1) {
         position: sticky;
         left: 0;
         z-index: 5;
         background-color: #1E293B;
-        min-width: 150px;
+        min-width: 110px;
+        max-width: 130px;
+        white-space: normal !important;
+        word-wrap: break-word !important;
         border-right: 2px solid #64748B !important;
     }
     .custom-table td:nth-child(1) {
@@ -113,7 +125,11 @@ st.markdown("""
         left: 0;
         z-index: 3;
         background-color: #0F172A;
-        min-width: 150px;
+        min-width: 110px;
+        max-width: 130px;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        line-height: 1.2;
         border-right: 2px solid #64748B !important;
     }
 
@@ -222,6 +238,15 @@ def cargar_datos_inversiones():
         return pd.concat(registros, ignore_index=True)
     return pd.DataFrame()
 
+def formatear_nombre_banco(nombre):
+    palabras = nombre.strip().split()
+    if len(palabras) > 1:
+        mitad = (len(palabras) + 1) // 2
+        linea1 = " ".join(palabras[:mitad])
+        linea2 = " ".join(palabras[mitad:])
+        return f"{linea1}<br>{linea2}"
+    return nombre
+
 # =========================================================================
 # INTERFAZ PRINCIPAL DE STREAMLIT
 # =========================================================================
@@ -248,7 +273,7 @@ with st.form(key="formulario_inversion"):
             "Capital a Invertir ($ USD)",
             min_value=1.0,
             value=None,
-            placeholder="",
+            placeholder=None,
             step=1.0
         )
     with col2:
@@ -257,7 +282,7 @@ with st.form(key="formulario_inversion"):
             min_value=1,
             max_value=3600,
             value=None,
-            placeholder="",
+            placeholder=None,
             step=1
         )
     submit_button = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
@@ -295,15 +320,15 @@ else:
     ganador = top5.iloc[0]
     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-    # Construcción de la tabla (sin columna Rank, dejando 'Institución Financiera' como columna 1 fija)
+    # Construcción de la tabla con los nombres de instituciones formateados en dos líneas
     html_rows = ""
     for idx, row in top5.iterrows():
-        banco = row['banco']
+        banco_fmt = formatear_nombre_banco(row['banco'])
         rango = f"{row['dias_minimo']} - {row['dias_maximo']} días"
         tna = f"{row['tasa_nominal_porcentaje']:.2f}%"
         ganancia = f"${row['ganancia_estimada']:,.2f}"
         
-        html_rows += f"<tr><td><strong>{banco}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+        html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
     table_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>"""
 
