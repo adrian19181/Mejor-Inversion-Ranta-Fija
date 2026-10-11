@@ -21,10 +21,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS personalizados para ocultar botones + -, centrar texto y formatear tabla
+# Estilos CSS personalizados para auto-seleccionar texto, ocultar botones y congelar columnas 1 y 2
 st.markdown("""
 <style>
-    /* Ocultar los botones + y - propios de Streamlit */
+    /* Auto-selección completa del texto al hacer clic/tap en los campos de entrada */
+    div[data-baseweb="input"] input {
+        text-align: center !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
+        user-select: all !important;
+        -webkit-user-select: all !important;
+    }
+
+    /* Ocultar botones + y - propios de Streamlit */
     div[data-testid="stNumberInputContainer"] button,
     button[data-testid="stNumberInputStepDown"],
     button[data-testid="stNumberInputStepUp"] {
@@ -40,28 +49,25 @@ st.markdown("""
     input[type=number] { 
         -moz-appearance: textfield !important; 
     }
-    
-    /* Centrar texto en las casillas de entrada del formulario */
-    div[data-baseweb="input"] input {
-        text-align: center !important;
-        font-size: 18px !important;
-        font-weight: 600 !important;
-    }
 
-    /* Contenedor y tabla adaptable con ancho inteligente y centrado */
+    /* Contenedor principal de tabla con desplazamiento horizontal */
     .table-container {
         width: 100%;
         overflow-x: auto;
         margin-top: 15px;
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        background-color: #0F172A;
     }
+    
     .custom-table {
         width: 100%;
-        border-collapse: collapse;
+        border-collapse: separate;
+        border-spacing: 0;
         table-layout: auto;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
+
     .custom-table th {
         background-color: #1E293B;
         color: #FFFFFF;
@@ -72,8 +78,10 @@ st.markdown("""
         font-weight: 700;
         line-height: 1.25;
         white-space: nowrap;
-        border: 1px solid #334155;
+        border-bottom: 2px solid #334155;
+        border-top: 1px solid #334155;
     }
+
     .custom-table td {
         text-align: center !important;
         vertical-align: middle !important;
@@ -82,13 +90,62 @@ st.markdown("""
         white-space: nowrap;
         border-bottom: 1px solid #334155;
     }
-    .custom-table tr:nth-child(even) {
-        background-color: rgba(255, 255, 255, 0.03);
+
+    /* --- FIJAR COLUMNA 1 (Rank) --- */
+    .custom-table th:nth-child(1) {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        background-color: #1E293B;
+        min-width: 65px;
+        border-right: 1px solid #334155;
     }
-    .custom-table tr:hover {
-        background-color: rgba(255, 255, 255, 0.08);
+    .custom-table td:nth-child(1) {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        background-color: #0F172A;
+        min-width: 65px;
+        border-right: 1px solid #334155;
+    }
+
+    /* --- FIJAR COLUMNA 2 (Institución Financiera) --- */
+    .custom-table th:nth-child(2) {
+        position: sticky;
+        left: 65px;
+        z-index: 5;
+        background-color: #1E293B;
+        border-right: 2px solid #64748B !important;
+        min-width: 150px;
+    }
+    .custom-table td:nth-child(2) {
+        position: sticky;
+        left: 65px;
+        z-index: 3;
+        background-color: #0F172A;
+        border-right: 2px solid #64748B !important;
+        min-width: 150px;
+    }
+
+    /* Mantenimiento del fondo opaco al alternar filas y hacer hover */
+    .custom-table tr:nth-child(even) td {
+        background-color: #182234 !important;
+    }
+    .custom-table tr:hover td {
+        background-color: #243248 !important;
     }
 </style>
+
+<script>
+    // Script JS para forzar la selección completa del número al tocar/enfocar el input
+    document.addEventListener('focusin', function(e) {
+        if (e.target && e.target.tagName === 'INPUT') {
+            setTimeout(function() {
+                e.target.select();
+            }, 30);
+        }
+    });
+</script>
 """, unsafe_allow_html=True)
 
 # Enlace de exportación de Google Drive
@@ -227,7 +284,7 @@ else:
     # Fórmula de interés simple: Ganancia = Monto * (TNA / 100) * (Días / 360)
     filtrado['ganancia_estimada'] = monto * (filtrado['tasa_nominal_porcentaje'] / 100.0) * (plazo_dias / 360.0)
     
-    # Ordenar estrictamente por Tasa Nominal (TNA) descendente
+    # Ordenar strictly por Tasa Nominal (TNA) descendente
     top5 = filtrado.sort_values(
         by='tasa_nominal_porcentaje',
         ascending=False
@@ -240,7 +297,7 @@ else:
     ganador = top5.iloc[0]
     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-    # Construcción de HTML estricto
+    # Construcción de la tabla con las columnas 1 y 2 congeladas (Sticky)
     iconos = ["🥇 1", "🥈 2", "🥉 3", "4", "5"]
     
     html_rows = ""
