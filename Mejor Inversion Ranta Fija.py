@@ -21,17 +21,24 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS personalizados para móvil, inputs y tabla centrado inteligente
+# Estilos CSS personalizados para ocultar botones + -, centrar texto y formatear tabla
 st.markdown("""
 <style>
-    /* Ocultar botones + - en inputs numéricos */
+    /* Ocultar los botones + y - propios de Streamlit */
+    div[data-testid="stNumberInputContainer"] button,
+    button[data-testid="stNumberInputStepDown"],
+    button[data-testid="stNumberInputStepUp"] {
+        display: none !important;
+    }
+
+    /* Ocultar botones de flechas nativos del navegador */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button { 
-        -webkit-appearance: none; 
-        margin: 0; 
+        -webkit-appearance: none !important; 
+        margin: 0 !important; 
     }
     input[type=number] { 
-        -moz-appearance: textfield; 
+        -moz-appearance: textfield !important; 
     }
     
     /* Centrar texto en las casillas de entrada del formulario */
@@ -233,7 +240,7 @@ else:
     ganador = top5.iloc[0]
     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-    # Construcción de HTML estricto sin sangría inicial para evitar formateo como bloque de código
+    # Construcción de HTML estricto
     iconos = ["🥇 1", "🥈 2", "🥉 3", "4", "5"]
     
     html_rows = ""
