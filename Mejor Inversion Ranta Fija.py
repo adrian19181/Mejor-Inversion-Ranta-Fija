@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
+import streamlit.components.v1 as components
 
 # =========================================================================
 # CONFIGURACIÓN Y AUTO-LANZAMIENTO LOCAL AL HACER DOBLE CLICK
@@ -21,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS personalizados para ocultar texto transparente (placeholder) y ajustar columna 1
+# Estilos CSS personalizados para ocultar botones (+/-), deshabilitar flechas y dar formato
 st.markdown("""
 <style>
     /* Ocultar texto auxiliar e instrucciones ("Press Enter to submit form", etc.) */
@@ -32,7 +33,7 @@ st.markdown("""
         display: none !important;
     }
 
-    /* Ocultar por completo las letras y números transparentes (placeholders) en las casillas */
+    /* Ocultar por completo placeholders transparentes */
     input::-webkit-input-placeholder,
     input::-moz-placeholder,
     input:-ms-input-placeholder,
@@ -41,23 +42,21 @@ st.markdown("""
         opacity: 0 !important;
     }
 
-    /* Auto-selección visual de texto y centrado en las casillas del formulario */
+    /* Centrado de texto en las casillas del formulario */
     div[data-baseweb="input"] input {
         text-align: center !important;
         font-size: 18px !important;
         font-weight: 600 !important;
-        user-select: all !important;
-        -webkit-user-select: all !important;
     }
 
-    /* Ocultar botones + y - propios de Streamlit */
+    /* Ocultar botones de incremento y decremento (+/-) propios de Streamlit */
     div[data-testid="stNumberInputContainer"] button,
     button[data-testid="stNumberInputStepDown"],
     button[data-testid="stNumberInputStepUp"] {
         display: none !important;
     }
 
-    /* Ocultar botones de flechas nativos del navegador */
+    /* Ocultar flechas de incremento/decremento nativas del navegador */
     input[type=number]::-webkit-inner-spin-button, 
     input[type=number]::-webkit-outer-spin-button { 
         -webkit-appearance: none !important; 
@@ -108,7 +107,7 @@ st.markdown("""
         border-bottom: 1px solid #334155;
     }
 
-    /* --- CONGELAR ÚNICAMENTE LA COLUMNA 1 (Institución Financiera en 2 líneas) --- */
+    /* --- CONGELAR ÚNICAMENTE LA COLUMNA 1 (Institución Financiera) --- */
     .custom-table th:nth-child(1) {
         position: sticky;
         left: 0;
@@ -133,7 +132,7 @@ st.markdown("""
         border-right: 2px solid #64748B !important;
     }
 
-    /* Mantenimiento del fondo opaco al alternar filas y hacer hover */
+    /* Fondo opaco al alternar filas y hacer hover */
     .custom-table tr:nth-child(even) td {
         background-color: #182234 !important;
     }
@@ -141,26 +140,40 @@ st.markdown("""
         background-color: #243248 !important;
     }
 </style>
-
-<script>
-    // JS para forzar la selección total del texto al tocar o enfocar la casilla en móvil o PC
-    (function() {
-        function autoSelectInput(e) {
-            if (e.target && e.target.tagName === 'INPUT') {
-                setTimeout(function() {
-                    try {
-                        e.target.select();
-                        e.target.setSelectionRange(0, 9999);
-                    } catch(err) {}
-                }, 50);
-            }
-        }
-        document.addEventListener('focusin', autoSelectInput, true);
-        document.addEventListener('click', autoSelectInput, true);
-        document.addEventListener('touchstart', autoSelectInput, true);
-    })();
-</script>
 """, unsafe_allow_html=True)
+
+# Inyección de script JS mediante components.html para auto-selección en las casillas del documento principal
+components.html("""
+<script>
+    const parentDoc = window.parent.document;
+    
+    function habilitarAutoSeleccion() {
+        const inputs = parentDoc.querySelectorAll('input[type="number"]');
+        inputs.forEach(input => {
+            if (!input.dataset.autoselectBound) {
+                input.dataset.autoselectBound = "true";
+                
+                const handler = function(e) {
+                    setTimeout(() => {
+                        try {
+                            e.target.select();
+                            e.target.setSelectionRange(0, 9999);
+                        } catch (err) {}
+                    }, 50);
+                };
+                
+                input.addEventListener('focus', handler, true);
+                input.addEventListener('click', handler, true);
+                input.addEventListener('touchstart', handler, true);
+            }
+        });
+    }
+
+    habilitarAutoSeleccion();
+    const observer = new MutationObserver(habilitarAutoSeleccion);
+    observer.observe(parentDoc.body, { childList: true, subtree: true });
+</script>
+""", height=0, width=0)
 
 # Enlace de exportación de Google Drive
 FILE_ID = "1JlrtCIMfv9H0kRDsruZVwOTBKS5_6eQP"
@@ -320,7 +333,7 @@ else:
     ganador = top5.iloc[0]
     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-    # Construcción de la tabla con los nombres de instituciones formateados en dos líneas
+    # Construcción de la tabla con la columna de institución financiera congelada
     html_rows = ""
     for idx, row in top5.iterrows():
         banco_fmt = formatear_nombre_banco(row['banco'])
