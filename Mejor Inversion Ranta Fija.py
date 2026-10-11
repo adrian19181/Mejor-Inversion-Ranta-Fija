@@ -327,7 +327,7 @@ else:
     ).head(5).reset_index(drop=True)
 
     st.markdown("---")
-    st.subheader("🏆 Top 5 Mejores Opciones")
+    st.subheader("🏆 Mejor Opción Plazo Fijo")
 
     # Opción ganadora destacada
     ganador = top5.iloc[0]
