@@ -45,6 +45,11 @@ st.markdown("""
     .kpi-card-compact { flex: 1; background-color: #1E293B; border: 1px solid #334155; border-radius: 10px; padding: 10px 4px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
     .kpi-title-compact { color: #94A3B8; font-size: 11px; font-weight: 600; margin-bottom: 4px; line-height: 1.2; }
     .kpi-value-compact { font-size: 22px; font-weight: 800; line-height: 1.1; }
+    
+    /* Estilos para el radio button (selector) */
+    div.row-widget.stRadio > div { flex-direction: column; gap: 10px; padding: 10px; background-color: #1E293B; border-radius: 8px; border: 1px solid #334155; }
+    div.row-widget.stRadio > div > label { background-color: #0F172A; padding: 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; border: 1px solid #334155; }
+    div.row-widget.stRadio > div > label:hover { background-color: #243248; border-color: #3b82f6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -130,20 +135,18 @@ def cargar_datos_inversiones():
                 df_ap['banco'] = [sheet] * len(df_t)
                 df_ap['producto'] = [title] * len(df_t)
                 
-                # Asignación del Grupo/Tipo de Ahorro Programado basado en el nombre del banco
                 banco_upper = sheet.upper()
                 if any(b in banco_upper for b in ["JARDIN AZUAYO", "MACHALA", "29 DE OCTUBRE", "PRODUBANCO", "JEP"]):
-                    df_ap['tipo_ahorro'] = "Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                    df_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 elif "AUSTRO" in banco_upper:
-                    df_ap['tipo_ahorro'] = "Grupo 2: Banco del Austro"
+                    df_ap['tipo_ahorro'] = "🔵 Grupo 2: Banco del Austro"
                 elif "COOPERCO" in banco_upper:
-                    df_ap['tipo_ahorro'] = "Grupo 3: Cooperco"
+                    df_ap['tipo_ahorro'] = "🟡 Grupo 3: Cooperco"
                 elif "SOLIDARIO" in banco_upper:
-                    df_ap['tipo_ahorro'] = "Grupo 4: Banco Solidario"
+                    df_ap['tipo_ahorro'] = "🟣 Grupo 4: Banco Solidario"
                 else:
-                    df_ap['tipo_ahorro'] = "Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                    df_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 
-                # Extracción provisional de columnas (esperando tus instrucciones para cada grupo)
                 df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0).fillna(0.0)
                 df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0).fillna(99999999.0)
                 df_ap['dias_minimo'] = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1).fillna(1).astype(int)
@@ -251,18 +254,18 @@ with tab_ap:
     else:
         st.markdown("<br><h3 style='text-align: center;'>🔍 Seleccionar Grupo a Comparar</h3>", unsafe_allow_html=True)
         
-        grupo_seleccionado = st.selectbox(
+        grupo_seleccionado = st.radio(
             "Filtrar por Instituciones con estructura similar:",
             [
-                "Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)",
-                "Grupo 2: Banco del Austro",
-                "Grupo 3: Cooperco",
-                "Grupo 4: Banco Solidario"
+                "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)",
+                "🔵 Grupo 2: Banco del Austro",
+                "🟡 Grupo 3: Cooperco",
+                "🟣 Grupo 4: Banco Solidario"
             ],
             label_visibility="collapsed"
         )
         
-        st.markdown("<h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
+        st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
             col1, col2 = st.columns(2)
             with col1: cuota_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
