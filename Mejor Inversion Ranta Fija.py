@@ -49,12 +49,12 @@ st.markdown("""
     /* Estilos para el radio button (selector táctil para móvil) */
     div.row-widget.stRadio > div { 
         flex-direction: column; 
-        gap: 16px; /* Mayor separación entre opciones */
+        gap: 16px; 
         padding: 10px 0px; 
     }
     div.row-widget.stRadio > div > label { 
         background-color: #1E293B; 
-        padding: 20px 15px; /* Recuadros más altos para fácil toque */
+        padding: 20px 15px; 
         border-radius: 12px; 
         cursor: pointer; 
         transition: all 0.2s ease; 
@@ -66,7 +66,7 @@ st.markdown("""
         border-color: #3b82f6; 
     }
     div.row-widget.stRadio > div > label p { 
-        font-size: 17px !important; /* Fuente más grande */
+        font-size: 17px !important; 
         font-weight: 700 !important; 
         color: #F8FAFC !important; 
     }
@@ -133,48 +133,111 @@ def cargar_datos_inversiones():
             start_col, title = inicios[idx]
             end_col = inicios[idx+1][0] if idx + 1 < len(inicios) else len(row1)
             
+            # Extraer headers solo para Plazo Fijo o Grupos 2-4
             headers = row1[start_col:end_col].tolist()
             valid_cols_idx = [j for j, h in enumerate(headers) if h != '' and h.upper() != 'NAN']
-            if not valid_cols_idx: continue
             
-            df_t = df_raw.iloc[2:, start_col:end_col].copy()
-            df_t.columns = headers
-            df_t = df_t.iloc[:, valid_cols_idx]
-            df_t = df_t.dropna(how='all')
-            for c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce')
-                
             es_ap = False
             kw_ap = ["PROGRAMADO", "CHANCHITO", "FONDO AHORRO", "AHORRO FONDO", "FUTURO SEGURO", "FLEXI"]
-            if any(kw in title for kw in kw_ap):
-                es_ap = True
-            elif "AHORRO" in title and "VISTA" not in title and "CUENTA" not in title and "PLUS" not in title:
+            if any(kw in title for kw in kw_ap) or ("AHORRO" in title and "VISTA" not in title and "CUENTA" not in title and "PLUS" not in title):
                 es_ap = True
                 
+            banco_upper = sheet.upper()
+            
             if es_ap:
-                df_ap = pd.DataFrame()
-                df_ap['banco'] = [sheet] * len(df_t)
-                df_ap['producto'] = [title] * len(df_t)
-                
-                banco_upper = sheet.upper()
+                # -------------------------------------------------------------
+                # EXTRACCIÓN ABSOLUTA PARA EL GRUPO 1
+                # -------------------------------------------------------------
                 if any(b in banco_upper for b in ["JARDIN AZUAYO", "MACHALA", "29 DE OCTUBRE", "PRODUBANCO", "JEP"]):
+                    
+                    if "JARDIN AZUAYO" in banco_upper:
+                        cols_idx = [5, 6, 7] # F, G, H
+                    elif "MACHALA" in banco_upper:
+                        cols_idx = [7, 8, 9] # H, I, J
+                    elif "29 DE OCTUBRE" in banco_upper:
+                        cols_idx = [8, 9, 10] # I, J, K
+                    elif "PRODUBANCO" in banco_upper:
+                        cols_idx = [7, 8, 9] # H, I, J
+                    elif "JEP" in banco_upper:
+                        cols_idx = [7, 8, 9] # H, I, J
+                        
+                    df_temp = df_raw.iloc[2:, cols_idx].copy()
+                    df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
+                    df_temp = df_temp.dropna(how='all')
+                    
+                    df_ap = pd.DataFrame()
+                    df_ap['banco'] = [sheet] * len(df_temp)
+                    df_ap['producto'] = [title] * len(df_temp)
                     df_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                elif "AUSTRO" in banco_upper:
-                    df_ap['tipo_ahorro'] = "🔵 Grupo 2: Banco del Austro"
-                elif "COOPERCO" in banco_upper:
-                    df_ap['tipo_ahorro'] = "🟡 Grupo 3: Cooperco"
-                elif "SOLIDARIO" in banco_upper:
-                    df_ap['tipo_ahorro'] = "🟣 Grupo 4: Banco Solidario"
+                    df_ap['monto_minimo'] = 0.0
+                    df_ap['monto_maximo'] = 99999999.0
+                    
+                    p_min = pd.to_numeric(df_temp['dias_minimo'], errors='coerce').fillna(1).astype(int)
+                    p_max = pd.to_numeric(df_temp['dias_maximo'], errors='coerce').fillna(9999).astype(int)
+                    
+                    if p_max.max() <= 120:
+                        p_min = p_min * 30
+                        p_max = p_max * 30
+                        
+                    df_ap['dias_minimo'] = p_min
+                    df_ap['dias_maximo'] = p_max
+                    df_ap['tna'] = pd.to_numeric(df_temp['tna'], errors='coerce').fillna(0.0)
+                    
+                    # Filtrar filas vacías o inválidas
+                    df_ap = df_ap[df_ap['tna'] > 0]
+                    if not df_ap.empty:
+                        tablas_ap.append(df_ap)
+                
+                # -------------------------------------------------------------
+                # EXTRACCIÓN TEMPORAL PARA GRUPOS 2, 3, 4
+                # -------------------------------------------------------------
                 else:
-                    df_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                
-                df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0).fillna(0.0)
-                df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0).fillna(99999999.0)
-                df_ap['dias_minimo'] = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1).fillna(1).astype(int)
-                df_ap['dias_maximo'] = safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias'], 9999).fillna(9999).astype(int)
-                df_ap['tna'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0).fillna(0.0)
-                
-                tablas_ap.append(df_ap)
+                    if not valid_cols_idx: continue
+                    df_t = df_raw.iloc[2:, start_col:end_col].copy()
+                    df_t.columns = headers
+                    df_t = df_t.iloc[:, valid_cols_idx]
+                    df_t = df_t.dropna(how='all')
+                    for c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce')
+                        
+                    df_ap = pd.DataFrame()
+                    df_ap['banco'] = [sheet] * len(df_t)
+                    df_ap['producto'] = [title] * len(df_t)
+                    
+                    if "AUSTRO" in banco_upper:
+                        df_ap['tipo_ahorro'] = "🔵 Grupo 2: Banco del Austro"
+                    elif "COOPERCO" in banco_upper:
+                        df_ap['tipo_ahorro'] = "🟡 Grupo 3: Cooperco"
+                    elif "SOLIDARIO" in banco_upper:
+                        df_ap['tipo_ahorro'] = "🟣 Grupo 4: Banco Solidario"
+                    
+                    df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0).fillna(0.0)
+                    df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0).fillna(99999999.0)
+                    dmin = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1).fillna(1).astype(int)
+                    dmax = safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias'], 9999).fillna(9999).astype(int)
+                    
+                    if dmax.max() <= 120:
+                        dmin = dmin * 30
+                        dmax = dmax * 30
+                        
+                    df_ap['dias_minimo'] = dmin
+                    df_ap['dias_maximo'] = dmax
+                    df_ap['tna'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0).fillna(0.0)
+                    
+                    df_ap = df_ap[df_ap['tna'] > 0]
+                    if not df_ap.empty:
+                        tablas_ap.append(df_ap)
+                        
+            # -------------------------------------------------------------
+            # EXTRACCIÓN PLAZO FIJO (Sin Cambios)
+            # -------------------------------------------------------------
             elif idx == 0:
+                if not valid_cols_idx: continue
+                df_t = df_raw.iloc[2:, start_col:end_col].copy()
+                df_t.columns = headers
+                df_t = df_t.iloc[:, valid_cols_idx]
+                df_t = df_t.dropna(how='all')
+                for c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce')
+
                 df_pf = pd.DataFrame()
                 df_pf['banco'] = [sheet] * len(df_t)
                 df_pf['monto_minimo'] = safe_get(df_t, ['monto_minimo'], 0.0).fillna(0.0)
