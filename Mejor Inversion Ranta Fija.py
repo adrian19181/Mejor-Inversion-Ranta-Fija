@@ -346,7 +346,7 @@ else:
     # Fórmula de interés simple: Ganancia = Monto * (TNA / 100) * (Días / 360)
     filtrado['ganancia_estimada'] = monto * (filtrado['tasa_nominal_porcentaje'] / 100.0) * (plazo_dias / 360.0)
     
-    # Ordenar estrictamente por Tasa Nominal (TNA) descendente
+    # Ordenar strictly por Tasa Nominal (TNA) descendente
     top5 = filtrado.sort_values(
         by='tasa_nominal_porcentaje',
         ascending=False
