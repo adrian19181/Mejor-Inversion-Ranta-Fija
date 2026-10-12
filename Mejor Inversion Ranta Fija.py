@@ -22,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS Optimizados
+# Estilos CSS Optimizados (Incluyendo Selector Táctil)
 st.markdown("""
 <style>
     h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { text-align: center !important; }
@@ -46,10 +46,30 @@ st.markdown("""
     .kpi-title-compact { color: #94A3B8; font-size: 11px; font-weight: 600; margin-bottom: 4px; line-height: 1.2; }
     .kpi-value-compact { font-size: 22px; font-weight: 800; line-height: 1.1; }
     
-    /* Estilos para el radio button (selector) */
-    div.row-widget.stRadio > div { flex-direction: column; gap: 10px; padding: 10px; background-color: #1E293B; border-radius: 8px; border: 1px solid #334155; }
-    div.row-widget.stRadio > div > label { background-color: #0F172A; padding: 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; border: 1px solid #334155; }
-    div.row-widget.stRadio > div > label:hover { background-color: #243248; border-color: #3b82f6; }
+    /* Estilos para el radio button (selector táctil para móvil) */
+    div.row-widget.stRadio > div { 
+        flex-direction: column; 
+        gap: 16px; /* Mayor separación entre opciones */
+        padding: 10px 0px; 
+    }
+    div.row-widget.stRadio > div > label { 
+        background-color: #1E293B; 
+        padding: 20px 15px; /* Recuadros más altos para fácil toque */
+        border-radius: 12px; 
+        cursor: pointer; 
+        transition: all 0.2s ease; 
+        border: 2px solid #334155; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    div.row-widget.stRadio > div > label:hover { 
+        background-color: #243248; 
+        border-color: #3b82f6; 
+    }
+    div.row-widget.stRadio > div > label p { 
+        font-size: 17px !important; /* Fuente más grande */
+        font-weight: 700 !important; 
+        color: #F8FAFC !important; 
+    }
 </style>
 """, unsafe_allow_html=True)
 
