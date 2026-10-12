@@ -93,7 +93,6 @@ LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 # FUNCIONES DE EXTRACCIÓN Y NORMALIZACIÓN DE DATOS MÚLTIPLES
 # =========================================================================
 def safe_get(df, cols, default_val):
-    """Extrae la primera columna que coincida en la lista, si no existe devuelve default_val"""
     for c in cols:
         if c in df.columns:
             return df[c]
@@ -124,7 +123,6 @@ def cargar_datos_inversiones():
         row0 = df_raw.iloc[0].fillna('').astype(str).str.strip().str.upper()
         row1 = df_raw.iloc[1].fillna('').astype(str).str.strip()
         
-        # Detectar bordes de tablas horizontales
         inicios = [(i, val) for i, val in enumerate(row0) if val != '' and val != 'NAN' and not val.startswith('UNNAMED')]
         
         for idx in range(len(inicios)):
@@ -141,7 +139,6 @@ def cargar_datos_inversiones():
             df_t = df_t.dropna(how='all')
             for c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce')
                 
-            # Filtro Inteligente de Producto
             es_ap = False
             kw_ap = ["PROGRAMADO", "CHANCHITO", "FONDO AHORRO", "AHORRO FONDO", "FUTURO SEGURO", "FLEXI"]
             if any(kw in title for kw in kw_ap):
@@ -153,16 +150,26 @@ def cargar_datos_inversiones():
                 df_ap = pd.DataFrame()
                 df_ap['banco'] = [sheet] * len(df_t)
                 df_ap['producto'] = [title] * len(df_t)
-                df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo'], 0.0).fillna(0.0)
-                df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo'], 99999999.0).fillna(99999999.0)
-                df_ap['dias_minimo'] = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1).fillna(1).astype(int)
-                df_ap['dias_maximo'] = safe_get(df_t, ['dias_maximo'], 9999).fillna(9999).astype(int)
+                df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0).fillna(0.0)
+                df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0).fillna(99999999.0)
+                
+                # Extracción flexible de plazos (días o meses)
+                dmin = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias', 'meses_minimo', 'plazo_minimo_meses'], 1).fillna(1).astype(int)
+                dmax = safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias', 'meses_maximo', 'plazo_maximo_meses'], 9999).fillna(9999).astype(int)
+                
+                # Conversión Inteligente: Si el plazo máximo tabulado es <= 120, asumimos que son meses y multiplicamos por 30
+                if dmax.max() <= 120:
+                    dmin = dmin * 30
+                    dmax = dmax * 30
+                    
+                df_ap['dias_minimo'] = dmin
+                df_ap['dias_maximo'] = dmax
+                
                 df_ap['tasa_base'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0).fillna(0.0)
-                df_ap['bonificacion_premio'] = safe_get(df_t, ['bonificacion_premio'], 0.0).fillna(0.0)
+                df_ap['bonificacion_premio'] = safe_get(df_t, ['bonificacion_premio', 'tasa_premio'], 0.0).fillna(0.0)
                 df_ap['tasa_total'] = df_ap['tasa_base'] + df_ap['bonificacion_premio']
                 tablas_ap.append(df_ap)
             elif idx == 0:
-                # Plazo Fijo (Asumimos siempre la primera tabla si no es AP)
                 df_pf = pd.DataFrame()
                 df_pf['banco'] = [sheet] * len(df_t)
                 df_pf['monto_minimo'] = safe_get(df_t, ['monto_minimo'], 0.0).fillna(0.0)
@@ -202,7 +209,7 @@ def formatear_nombre_banco(nombre):
     return nombre
 
 # =========================================================================
-# INTERFAZ PRINCIPAL Y PESTAÑAS (TABS)
+# INTERFAZ PRINCIPAL
 # =========================================================================
 st.markdown("<h1 style='text-align: center;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
 
@@ -224,7 +231,7 @@ tab_pf, tab_ap = st.tabs(["💰 Plazo Fijo", "📅 Ahorro Programado"])
 # PESTAÑA 1: PLAZO FIJO
 # -------------------------------------------------------------------------
 with tab_pf:
-    st.markdown("<h3 style='text-align: center;'>📋 Parámetros de Inversión</h3>", unsafe_allow_html=True)
+    st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Inversión</h3>", unsafe_allow_html=True)
     with st.form(key="formulario_pf"):
         col1, col2 = st.columns(2)
         with col1: monto_input = st.number_input("Capital a Invertir ($ USD)", min_value=1.0, value=None, step=1.0)
@@ -259,48 +266,6 @@ with tab_pf:
         table_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>"""
         st.markdown(table_html, unsafe_allow_html=True)
 
-    # --- KPIs Referenciales al final de la pestaña Plazo Fijo ---
-    df_ref = cargar_tasas_referenciales()
-    if not df_ref.empty and len(df_ref.columns) >= 2:
-        df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
-        tasas_limpias = df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip()
-        df_ref['tasa_val'] = pd.to_numeric(tasas_limpias, errors='coerce')
-        df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).copy()
-
-        if not df_validos.empty:
-            df_validos = df_validos.sort_values('fecha_dt')
-            fecha_actual = datetime.datetime.now()
-            df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == fecha_actual.year) & (df_validos['fecha_dt'].dt.month == fecha_actual.month)]
-            
-            if not df_mes_actual.empty:
-                tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
-                fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
-            else:
-                tasa_actual = df_validos.iloc[-1]['tasa_val']
-                fecha_kpi = df_validos.iloc[-1]['fecha_dt']
-
-            meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-            etiqueta_mes_anio = f"{meses_nombres[fecha_kpi.month - 1]} {fecha_kpi.year}"
-            tasa_promedio_anio = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]['tasa_val'].mean()
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("---")
-            st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
-            
-            kpis_side_by_side = f"""
-            <div class="kpi-flex-container">
-                <div class="kpi-card-compact">
-                    <div class="kpi-title-compact">Referencial Actual<br>({etiqueta_mes_anio})</div>
-                    <div class="kpi-value-compact" style="color: #22c55e;">{tasa_actual:.2f}%</div>
-                </div>
-                <div class="kpi-card-compact">
-                    <div class="kpi-title-compact">Promedio Anual<br>({fecha_kpi.year})</div>
-                    <div class="kpi-value-compact" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div>
-                </div>
-            </div>
-            """
-            st.markdown(kpis_side_by_side, unsafe_allow_html=True)
-
 # -------------------------------------------------------------------------
 # PESTAÑA 2: AHORRO PROGRAMADO
 # -------------------------------------------------------------------------
@@ -308,24 +273,42 @@ with tab_ap:
     if df_ap.empty:
         st.info("No se encontraron productos de Ahorro Programado en la base de datos.")
     else:
+        st.markdown("<br><h3 style='text-align: center;'>🔍 Clasificación del Plan</h3>", unsafe_allow_html=True)
+        
+        # Filtro de tipo de ahorro programado
+        tipo_seleccion = st.radio(
+            "Selecciona la estructura del ahorro:", 
+            ["Todas las opciones", "Tradicional (Tasa Fija Única)", "Con Premio/Bono por Cumplimiento"],
+            horizontal=False,
+            label_visibility="collapsed"
+        )
+        
         st.markdown("<h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
             col1, col2 = st.columns(2)
             with col1: ahorro_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
-            with col2: meses_input = st.number_input("Plazo de Compromiso (Meses)", min_value=1, max_value=120, value=None, step=1)
+            with col2: meses_input = st.number_input("Plazo a cumplir (Meses)", min_value=1, max_value=120, value=None, step=1)
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
         cuota = ahorro_input if ahorro_input is not None else 100.0
         meses = meses_input if meses_input is not None else 12
         dias_ap = meses * 30
 
-        filtrado_ap = df_ap[(df_ap['monto_minimo'] <= cuota) & (df_ap['monto_maximo'] >= cuota) & 
-                            (df_ap['dias_minimo'] <= dias_ap) & (df_ap['dias_maximo'] >= dias_ap)].copy()
+        # Aplicar el filtro de estructura según lo que seleccionó el usuario
+        df_ap_filtrado = df_ap.copy()
+        if "Tradicional" in tipo_seleccion:
+            df_ap_filtrado = df_ap_filtrado[df_ap_filtrado['bonificacion_premio'] == 0]
+        elif "Premio" in tipo_seleccion:
+            df_ap_filtrado = df_ap_filtrado[df_ap_filtrado['bonificacion_premio'] > 0]
+
+        # Validar rangos de monto y plazo
+        filtrado_ap = df_ap_filtrado[(df_ap_filtrado['monto_minimo'] <= cuota) & (df_ap_filtrado['monto_maximo'] >= cuota) & 
+                                     (df_ap_filtrado['dias_minimo'] <= dias_ap) & (df_ap_filtrado['dias_maximo'] >= dias_ap)].copy()
 
         if filtrado_ap.empty:
-            st.error(f"No hay opciones disponibles para una cuota de ${cuota:,.2f} a {meses} meses.")
+            st.error(f"No hay opciones en esta categoría para una cuota de ${cuota:,.2f} a {meses} meses.")
         else:
-            # Fórmula de Acumulación (Anualidad Aproximada)
+            # Fórmula de Acumulación Simple para comparar rendimiento relativo
             r_mensual = (filtrado_ap['tasa_total'] / 100.0) / 12.0
             fv = np.where(r_mensual > 0, cuota * (((1 + r_mensual)**meses - 1) / r_mensual) * (1 + r_mensual), cuota * meses)
             filtrado_ap['total_acumulado'] = fv
@@ -355,3 +338,60 @@ with tab_ap:
 
             table_ap_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Tasa<br>Base</th><th>Premio /<br>Bono</th><th>Tasa<br>Total</th><th>Total<br>Estimado</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>"""
             st.markdown(table_ap_html, unsafe_allow_html=True)
+
+# -------------------------------------------------------------------------
+# KPIS GLOBALES DE TASAS REFERENCIALES (BCE) FUERA DE LAS PESTAÑAS
+# -------------------------------------------------------------------------
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("---")
+st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
+
+df_ref = cargar_tasas_referenciales()
+
+if not df_ref.empty and len(df_ref.columns) >= 2:
+    df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
+    tasas_limpias = df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip()
+    df_ref['tasa_val'] = pd.to_numeric(tasas_limpias, errors='coerce')
+    
+    df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).copy()
+
+    if not df_validos.empty:
+        df_validos = df_validos.sort_values('fecha_dt')
+        fecha_actual = datetime.datetime.now()
+        
+        anio_actual = fecha_actual.year
+        mes_actual = fecha_actual.month
+        df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == anio_actual) & (df_validos['fecha_dt'].dt.month == mes_actual)]
+
+        if not df_mes_actual.empty:
+            tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
+            fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
+        else:
+            tasa_actual = df_validos.iloc[-1]['tasa_val']
+            fecha_kpi = df_validos.iloc[-1]['fecha_dt']
+
+        meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        nombre_mes = meses_nombres[fecha_kpi.month - 1]
+        etiqueta_mes_anio = f"{nombre_mes} {fecha_kpi.year}"
+
+        df_anio_actual = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]
+        tasa_promedio_anio = df_anio_actual['tasa_val'].mean()
+
+        kpis_side_by_side = f"""
+        <div class="kpi-flex-container">
+            <div class="kpi-card-compact">
+                <div class="kpi-title-compact">Referencial Actual<br>({etiqueta_mes_anio})</div>
+                <div class="kpi-value-compact" style="color: #22c55e;">{tasa_actual:.2f}%</div>
+            </div>
+            <div class="kpi-card-compact">
+                <div class="kpi-title-compact">Promedio Anual<br>({fecha_kpi.year})</div>
+                <div class="kpi-value-compact" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div>
+            </div>
+        </div>
+        """
+        st.markdown(kpis_side_by_side, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+    else:
+        st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
+else:
+    st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
