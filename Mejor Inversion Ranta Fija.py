@@ -127,25 +127,33 @@ st.markdown("""
     .custom-table tr:nth-child(even) td { background-color: #182234 !important; }
     .custom-table tr:hover td { background-color: #243248 !important; }
 
-    /* Diseños de recuadros / tarjetas para KPIs */
-    .kpi-card {
+    /* Diseños de recuadros / tarjetas para KPIs optimizados para móvil lado a lado */
+    .kpi-flex-container {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        margin-top: 10px;
+    }
+    .kpi-card-compact {
+        flex: 1;
         background-color: #1E293B;
         border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 16px 10px;
+        border-radius: 10px;
+        padding: 10px 4px;
         text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-        margin-bottom: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
-    .kpi-title {
+    .kpi-title-compact {
         color: #94A3B8;
-        font-size: 13px;
+        font-size: 11px;
         font-weight: 600;
-        margin-bottom: 8px;
-        line-height: 1.3;
+        margin-bottom: 4px;
+        line-height: 1.2;
     }
-    .kpi-value {
-        font-size: 32px;
+    .kpi-value-compact {
+        font-size: 22px;
         font-weight: 800;
         line-height: 1.1;
     }
@@ -328,7 +336,7 @@ else:
     st.markdown(table_html, unsafe_allow_html=True)
 
 # =========================================================================
-# KPIS DE TASAS REFERENCIALES (BCE) EN RECUADROS
+# KPIS DE TASAS REFERENCIALES (BCE) LADO A LADO COMPACTOS
 # =========================================================================
 df_ref = cargar_tasas_referenciales()
 
@@ -364,24 +372,20 @@ if not df_ref.empty and len(df_ref.columns) >= 2:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
 
-        kpi_col1, kpi_col2 = st.columns(2)
-        with kpi_col1:
-            st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-title">Referencial Actual<br>({etiqueta_mes_anio})</div>
-                <div class="kpi-value" style="color: #22c55e;">{tasa_actual:.2f}%</div>
+        kpis_side_by_side = f"""
+        <div class="kpi-flex-container">
+            <div class="kpi-card-compact">
+                <div class="kpi-title-compact">Referencial Actual<br>({etiqueta_mes_anio})</div>
+                <div class="kpi-value-compact" style="color: #22c55e;">{tasa_actual:.2f}%</div>
             </div>
-            """, unsafe_allow_html=True)
-
-        with kpi_col2:
-            st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-title">Promedio Anual<br>({fecha_kpi.year})</div>
-                <div class="kpi-value" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div>
+            <div class="kpi-card-compact">
+                <div class="kpi-title-compact">Promedio Anual<br>({fecha_kpi.year})</div>
+                <div class="kpi-value-compact" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div>
             </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """
+        st.markdown(kpis_side_by_side, unsafe_allow_html=True)
     else:
         st.markdown("<br><hr>", unsafe_allow_html=True)
         st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
