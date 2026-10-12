@@ -22,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS Optimizados (Incluyendo Selector Táctil)
+# Estilos CSS Optimizados
 st.markdown("""
 <style>
     h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { text-align: center !important; }
@@ -46,30 +46,10 @@ st.markdown("""
     .kpi-title-compact { color: #94A3B8; font-size: 11px; font-weight: 600; margin-bottom: 4px; line-height: 1.2; }
     .kpi-value-compact { font-size: 22px; font-weight: 800; line-height: 1.1; }
     
-    /* Estilos para el radio button (selector táctil para móvil) */
-    div.row-widget.stRadio > div { 
-        flex-direction: column; 
-        gap: 16px; 
-        padding: 10px 0px; 
-    }
-    div.row-widget.stRadio > div > label { 
-        background-color: #1E293B; 
-        padding: 20px 15px; 
-        border-radius: 12px; 
-        cursor: pointer; 
-        transition: all 0.2s ease; 
-        border: 2px solid #334155; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    div.row-widget.stRadio > div > label:hover { 
-        background-color: #243248; 
-        border-color: #3b82f6; 
-    }
-    div.row-widget.stRadio > div > label p { 
-        font-size: 17px !important; 
-        font-weight: 700 !important; 
-        color: #F8FAFC !important; 
-    }
+    div.row-widget.stRadio > div { flex-direction: column; gap: 16px; padding: 10px 0px; }
+    div.row-widget.stRadio > div > label { background-color: #1E293B; padding: 20px 15px; border-radius: 12px; cursor: pointer; transition: all 0.2s ease; border: 2px solid #334155; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    div.row-widget.stRadio > div > label:hover { background-color: #243248; border-color: #3b82f6; }
+    div.row-widget.stRadio > div > label p { font-size: 17px !important; font-weight: 700 !important; color: #F8FAFC !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,8 +79,15 @@ DRIVE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xls
 LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 
 # =========================================================================
-# FUNCIONES DE EXTRACCIÓN Y CLASIFICACIÓN
+# FUNCIONES DE EXTRACCIÓN Y LIMPIEZA GLOBAL
 # =========================================================================
+def limpiar_numeros(serie):
+    """Filtro agresivo global: Convierte a texto, elimina comas, % y $, y fuerza a número."""
+    s = pd.Series(serie).astype(str).str.replace(',', '.', regex=False)
+    s = s.str.replace('%', '', regex=False).str.replace('$', '', regex=False).str.strip()
+    s = s.replace(['nan', 'NAN', 'None', ''], np.nan)
+    return pd.to_numeric(s, errors='coerce')
+
 def safe_get(df, cols, default_val):
     for c in cols:
         if c in df.columns: return df[c]
@@ -133,7 +120,6 @@ def cargar_datos_inversiones():
             start_col, title = inicios[idx]
             end_col = inicios[idx+1][0] if idx + 1 < len(inicios) else len(row1)
             
-            # Extraer headers solo para Plazo Fijo o Grupos 2-4
             headers = row1[start_col:end_col].tolist()
             valid_cols_idx = [j for j, h in enumerate(headers) if h != '' and h.upper() != 'NAN']
             
@@ -149,17 +135,11 @@ def cargar_datos_inversiones():
                 # EXTRACCIÓN ABSOLUTA PARA EL GRUPO 1
                 # -------------------------------------------------------------
                 if any(b in banco_upper for b in ["JARDIN AZUAYO", "MACHALA", "29 DE OCTUBRE", "PRODUBANCO", "JEP"]):
-                    
-                    if "JARDIN AZUAYO" in banco_upper:
-                        cols_idx = [5, 6, 7] # F, G, H
-                    elif "MACHALA" in banco_upper:
-                        cols_idx = [7, 8, 9] # H, I, J
-                    elif "29 DE OCTUBRE" in banco_upper:
-                        cols_idx = [8, 9, 10] # I, J, K
-                    elif "PRODUBANCO" in banco_upper:
-                        cols_idx = [7, 8, 9] # H, I, J
-                    elif "JEP" in banco_upper:
-                        cols_idx = [7, 8, 9] # H, I, J
+                    if "JARDIN AZUAYO" in banco_upper: cols_idx = [5, 6, 7] # F, G, H
+                    elif "MACHALA" in banco_upper: cols_idx = [7, 8, 9] # H, I, J
+                    elif "29 DE OCTUBRE" in banco_upper: cols_idx = [8, 9, 10] # I, J, K
+                    elif "PRODUBANCO" in banco_upper: cols_idx = [7, 8, 9] # H, I, J
+                    elif "JEP" in banco_upper: cols_idx = [7, 8, 9] # H, I, J
                         
                     df_temp = df_raw.iloc[2:, cols_idx].copy()
                     df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
@@ -172,21 +152,20 @@ def cargar_datos_inversiones():
                     df_ap['monto_minimo'] = 0.0
                     df_ap['monto_maximo'] = 99999999.0
                     
-                    p_min = pd.to_numeric(df_temp['dias_minimo'], errors='coerce').fillna(1).astype(int)
-                    p_max = pd.to_numeric(df_temp['dias_maximo'], errors='coerce').fillna(9999).astype(int)
+                    p_min = limpiar_numeros(df_temp['dias_minimo']).fillna(1).astype(int)
+                    p_max = limpiar_numeros(df_temp['dias_maximo']).fillna(9999).astype(int)
                     
+                    # Conversión a días si detecta que está en meses (max <= 120)
                     if p_max.max() <= 120:
                         p_min = p_min * 30
                         p_max = p_max * 30
                         
                     df_ap['dias_minimo'] = p_min
                     df_ap['dias_maximo'] = p_max
-                    df_ap['tna'] = pd.to_numeric(df_temp['tna'], errors='coerce').fillna(0.0)
+                    df_ap['tna'] = limpiar_numeros(df_temp['tna']).fillna(0.0)
                     
-                    # Filtrar filas vacías o inválidas
                     df_ap = df_ap[df_ap['tna'] > 0]
-                    if not df_ap.empty:
-                        tablas_ap.append(df_ap)
+                    if not df_ap.empty: tablas_ap.append(df_ap)
                 
                 # -------------------------------------------------------------
                 # EXTRACCIÓN TEMPORAL PARA GRUPOS 2, 3, 4
@@ -197,23 +176,20 @@ def cargar_datos_inversiones():
                     df_t.columns = headers
                     df_t = df_t.iloc[:, valid_cols_idx]
                     df_t = df_t.dropna(how='all')
-                    for c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce')
+                    for c in df_t.columns: df_t[c] = limpiar_numeros(df_t[c])
                         
                     df_ap = pd.DataFrame()
                     df_ap['banco'] = [sheet] * len(df_t)
                     df_ap['producto'] = [title] * len(df_t)
                     
-                    if "AUSTRO" in banco_upper:
-                        df_ap['tipo_ahorro'] = "🔵 Grupo 2: Banco del Austro"
-                    elif "COOPERCO" in banco_upper:
-                        df_ap['tipo_ahorro'] = "🟡 Grupo 3: Cooperco"
-                    elif "SOLIDARIO" in banco_upper:
-                        df_ap['tipo_ahorro'] = "🟣 Grupo 4: Banco Solidario"
+                    if "AUSTRO" in banco_upper: df_ap['tipo_ahorro'] = "🔵 Grupo 2: Banco del Austro"
+                    elif "COOPERCO" in banco_upper: df_ap['tipo_ahorro'] = "🟡 Grupo 3: Cooperco"
+                    elif "SOLIDARIO" in banco_upper: df_ap['tipo_ahorro'] = "🟣 Grupo 4: Banco Solidario"
                     
-                    df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0).fillna(0.0)
-                    df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0).fillna(99999999.0)
-                    dmin = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1).fillna(1).astype(int)
-                    dmax = safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias'], 9999).fillna(9999).astype(int)
+                    df_ap['monto_minimo'] = limpiar_numeros(safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0)).fillna(0.0)
+                    df_ap['monto_maximo'] = limpiar_numeros(safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0)).fillna(99999999.0)
+                    dmin = limpiar_numeros(safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1)).fillna(1).astype(int)
+                    dmax = limpiar_numeros(safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias'], 9999)).fillna(9999).astype(int)
                     
                     if dmax.max() <= 120:
                         dmin = dmin * 30
@@ -221,14 +197,13 @@ def cargar_datos_inversiones():
                         
                     df_ap['dias_minimo'] = dmin
                     df_ap['dias_maximo'] = dmax
-                    df_ap['tna'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0).fillna(0.0)
+                    df_ap['tna'] = limpiar_numeros(safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0)).fillna(0.0)
                     
                     df_ap = df_ap[df_ap['tna'] > 0]
-                    if not df_ap.empty:
-                        tablas_ap.append(df_ap)
+                    if not df_ap.empty: tablas_ap.append(df_ap)
                         
             # -------------------------------------------------------------
-            # EXTRACCIÓN PLAZO FIJO (Sin Cambios)
+            # EXTRACCIÓN GLOBAL PLAZO FIJO
             # -------------------------------------------------------------
             elif idx == 0:
                 if not valid_cols_idx: continue
@@ -236,16 +211,18 @@ def cargar_datos_inversiones():
                 df_t.columns = headers
                 df_t = df_t.iloc[:, valid_cols_idx]
                 df_t = df_t.dropna(how='all')
-                for c in df_t.columns: df_t[c] = pd.to_numeric(df_t[c], errors='coerce')
 
                 df_pf = pd.DataFrame()
                 df_pf['banco'] = [sheet] * len(df_t)
-                df_pf['monto_minimo'] = safe_get(df_t, ['monto_minimo'], 0.0).fillna(0.0)
-                df_pf['monto_maximo'] = safe_get(df_t, ['monto_maximo'], 99999999.0).fillna(99999999.0)
-                df_pf['dias_minimo'] = safe_get(df_t, ['dias_minimo'], 1).fillna(1).astype(int)
-                df_pf['dias_maximo'] = safe_get(df_t, ['dias_maximo'], 9999).fillna(9999).astype(int)
-                df_pf['tasa_nominal_porcentaje'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_pago_vencimiento_porcentaje'], 0.0).fillna(0.0)
-                tablas_pf.append(df_pf)
+                df_pf['monto_minimo'] = limpiar_numeros(safe_get(df_t, ['monto_minimo'], 0.0)).fillna(0.0)
+                df_pf['monto_maximo'] = limpiar_numeros(safe_get(df_t, ['monto_maximo'], 99999999.0)).fillna(99999999.0)
+                df_pf['dias_minimo'] = limpiar_numeros(safe_get(df_t, ['dias_minimo'], 1)).fillna(1).astype(int)
+                df_pf['dias_maximo'] = limpiar_numeros(safe_get(df_t, ['dias_maximo'], 9999)).fillna(9999).astype(int)
+                df_pf['tasa_nominal_porcentaje'] = limpiar_numeros(safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_pago_vencimiento_porcentaje'], 0.0)).fillna(0.0)
+                
+                # Filtrar tasas válidas
+                df_pf = df_pf[df_pf['tasa_nominal_porcentaje'] > 0]
+                if not df_pf.empty: tablas_pf.append(df_pf)
 
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
     df_final_ap = pd.concat(tablas_ap, ignore_index=True) if tablas_ap else pd.DataFrame()
@@ -395,7 +372,7 @@ st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (B
 df_ref = cargar_tasas_referenciales()
 if not df_ref.empty and len(df_ref.columns) >= 2:
     df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
-    df_ref['tasa_val'] = pd.to_numeric(df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip(), errors='coerce')
+    df_ref['tasa_val'] = limpiar_numeros(df_ref.iloc[:, 1])
     df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).sort_values('fecha_dt')
 
     if not df_validos.empty:
