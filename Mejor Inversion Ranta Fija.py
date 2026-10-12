@@ -1,5 +1,6 @@
 import sys
 import io
+import datetime
 import requests
 import pandas as pd
 import numpy as np
@@ -181,7 +182,7 @@ DRIVE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xls
 LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 
 # =========================================================================
-# FUNCIÓN DE CARGA Y NORMALIZACIÓN DE DATOS (CON CACHÉ)
+# FUNCIÓN DE CARGA Y NORMALIZACIÓN DE DATOS BANCARIOS (CON CACHÉ)
 # =========================================================================
 @st.cache_data(ttl=3600)
 def cargar_datos_inversiones():
@@ -205,6 +206,9 @@ def cargar_datos_inversiones():
     registros = []
 
     for sheet in xl.sheet_names:
+        if sheet == "Tasas Referenciales":
+            continue
+
         df_raw = pd.read_excel(xl, sheet_name=sheet, header=None)
         if len(df_raw) < 3:
             continue
@@ -250,6 +254,28 @@ def cargar_datos_inversiones():
     if registros:
         return pd.concat(registros, ignore_index=True)
     return pd.DataFrame()
+
+# =========================================================================
+# FUNCIÓN DE CARGA DE TASAS REFERENCIALES (CON CACHÉ)
+# =========================================================================
+@st.cache_data(ttl=3600)
+def cargar_tasas_referenciales():
+    content = None
+    try:
+        response = requests.get(DRIVE_URL, timeout=10)
+        if response.status_code == 200:
+            content = io.BytesIO(response.content)
+    except Exception:
+        content = None
+
+    try:
+        if content is None:
+            df_ref = pd.read_excel(LOCAL_BACKUP_PATH, sheet_name="Tasas Referenciales")
+        else:
+            df_ref = pd.read_excel(content, sheet_name="Tasas Referenciales")
+        return df_ref
+    except Exception:
+        return pd.DataFrame()
 
 def formatear_nombre_banco(nombre):
     palabras = nombre.strip().split()
@@ -346,3 +372,52 @@ else:
     table_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>"""
 
     st.markdown(table_html, unsafe_allow_html=True)
+
+# =========================================================================
+# KPIS DE TASAS REFERENCIALES (BCE)
+# =========================================================================
+df_ref = cargar_tasas_referenciales()
+
+if not df_ref.empty and "DateTime" in df_ref.columns:
+    df_ref['fecha_dt'] = pd.to_datetime(df_ref['DateTime'], dayfirst=True, errors='coerce')
+    df_ref['tasa_val'] = pd.to_numeric(df_ref.iloc[:, 1], errors='coerce')
+    df_ref = df_ref.dropna(subset=['fecha_dt', 'tasa_val'])
+
+    if not df_ref.empty:
+        fecha_actual = datetime.datetime.now()
+        anio_actual = fecha_actual.year
+        mes_actual = fecha_actual.month
+
+        # Filtrar dato del mes y año actual
+        df_mes_actual = df_ref[(df_ref['fecha_dt'].dt.year == anio_actual) & (df_ref['fecha_dt'].dt.month == mes_actual)]
+
+        if not df_mes_actual.empty:
+            tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
+            fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
+        else:
+            # Si aún no existe el registro del mes actual exacto, tomar el último registro disponible
+            tasa_actual = df_ref.iloc[-1]['tasa_val']
+            fecha_kpi = df_ref.iloc[-1]['fecha_dt']
+
+        meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        nombre_mes = meses_nombres[fecha_kpi.month - 1]
+        etiqueta_mes_anio = f"{nombre_mes} {fecha_kpi.year}"
+
+        # Filtrar datos del año actual para el promedio
+        df_anio_actual = df_ref[df_ref['fecha_dt'].dt.year == fecha_kpi.year]
+        tasa_promedio_anio = df_anio_actual['tasa_val'].mean()
+
+        st.markdown("---")
+        st.subheader("📊 Tasas Pasivas Referenciales (BCE)")
+
+        kpi_col1, kpi_col2 = st.columns(2)
+        with kpi_col1:
+            st.metric(
+                label=f"Tasa Referencial Actual ({etiqueta_mes_anio})",
+                value=f"{tasa_actual:.2f}%"
+            )
+        with kpi_col2:
+            st.metric(
+                label=f"Tasa Promedio Anual ({fecha_kpi.year})",
+                value=f"{tasa_promedio_anio:.2f}%"
+            )
