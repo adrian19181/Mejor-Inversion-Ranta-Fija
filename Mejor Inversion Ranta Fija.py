@@ -25,27 +25,14 @@ st.set_page_config(
 # Estilos CSS Optimizados
 st.markdown("""
 <style>
-    /* Centrar todos los títulos y encabezados */
-    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
-        text-align: center !important;
-    }
-    
-    /* Estilizar las Pestañas (Tabs) */
-    button[data-baseweb="tab"] {
-        font-size: 16px !important;
-        font-weight: 600 !important;
-    }
-
-    /* Ocultar texto auxiliar e instrucciones */
-    [data-testid="stInputInstruction"], small[data-testid="stInputInstruction"], 
-    div[data-testid="InputInstruction"], div[data-baseweb="typo-caption"] { display: none !important; }
+    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { text-align: center !important; }
+    button[data-baseweb="tab"] { font-size: 16px !important; font-weight: 600 !important; }
+    [data-testid="stInputInstruction"], small[data-testid="stInputInstruction"], div[data-testid="InputInstruction"], div[data-baseweb="typo-caption"] { display: none !important; }
     input::-webkit-input-placeholder, input::-moz-placeholder, input:-ms-input-placeholder, input::placeholder { color: transparent !important; opacity: 0 !important; }
     div[data-baseweb="input"] input { text-align: center !important; font-size: 18px !important; font-weight: 600 !important; }
     div[data-testid="stNumberInputContainer"] button, button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none !important; }
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
     input[type=number] { -moz-appearance: textfield !important; }
-
-    /* Tablas Personalizadas */
     .table-container { width: 100%; overflow-x: auto; margin-top: 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); background-color: #0F172A; }
     .custom-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; font-family: -apple-system, sans-serif; }
     .custom-table th { background-color: #1E293B; color: #FFFFFF; text-align: center !important; vertical-align: middle !important; padding: 10px 8px; font-size: 13px; font-weight: 700; border-bottom: 2px solid #334155; border-top: 1px solid #334155; }
@@ -54,8 +41,6 @@ st.markdown("""
     .custom-table td:nth-child(1) { position: sticky; left: 0; z-index: 3; background-color: #0F172A; min-width: 110px; max-width: 130px; white-space: normal !important; word-wrap: break-word !important; border-right: 2px solid #64748B !important; }
     .custom-table tr:nth-child(even) td { background-color: #182234 !important; }
     .custom-table tr:hover td { background-color: #243248 !important; }
-
-    /* KPIs Compactos Lado a Lado */
     .kpi-flex-container { display: flex; flex-direction: row; justify-content: space-between; gap: 8px; width: 100%; margin-top: 10px; }
     .kpi-card-compact { flex: 1; background-color: #1E293B; border: 1px solid #334155; border-radius: 10px; padding: 10px 4px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
     .kpi-title-compact { color: #94A3B8; font-size: 11px; font-weight: 600; margin-bottom: 4px; line-height: 1.2; }
@@ -63,7 +48,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inyección JS para autoselección
 components.html("""
 <script>
     const parentDoc = window.parent.document;
@@ -90,12 +74,11 @@ DRIVE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xls
 LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 
 # =========================================================================
-# FUNCIONES DE EXTRACCIÓN Y NORMALIZACIÓN DE DATOS MÚLTIPLES
+# FUNCIONES DE EXTRACCIÓN Y CLASIFICACIÓN
 # =========================================================================
 def safe_get(df, cols, default_val):
     for c in cols:
-        if c in df.columns:
-            return df[c]
+        if c in df.columns: return df[c]
     return pd.Series([default_val]*len(df))
 
 @st.cache_data(ttl=3600)
@@ -103,14 +86,11 @@ def cargar_datos_inversiones():
     content = None
     try:
         response = requests.get(DRIVE_URL, timeout=10)
-        if response.status_code == 200:
-            content = io.BytesIO(response.content)
-    except Exception:
-        pass
+        if response.status_code == 200: content = io.BytesIO(response.content)
+    except Exception: pass
 
     xl = pd.ExcelFile(content) if content is not None else (pd.ExcelFile(LOCAL_BACKUP_PATH) if pd.io.common.file_exists(LOCAL_BACKUP_PATH) else None)
-    if xl is None:
-        return pd.DataFrame(), pd.DataFrame()
+    if xl is None: return pd.DataFrame(), pd.DataFrame()
 
     tablas_pf = []
     tablas_ap = []
@@ -122,7 +102,6 @@ def cargar_datos_inversiones():
         
         row0 = df_raw.iloc[0].fillna('').astype(str).str.strip().str.upper()
         row1 = df_raw.iloc[1].fillna('').astype(str).str.strip()
-        
         inicios = [(i, val) for i, val in enumerate(row0) if val != '' and val != 'NAN' and not val.startswith('UNNAMED')]
         
         for idx in range(len(inicios)):
@@ -150,24 +129,27 @@ def cargar_datos_inversiones():
                 df_ap = pd.DataFrame()
                 df_ap['banco'] = [sheet] * len(df_t)
                 df_ap['producto'] = [title] * len(df_t)
+                
+                # Asignación del Grupo/Tipo de Ahorro Programado basado en el nombre del banco
+                banco_upper = sheet.upper()
+                if any(b in banco_upper for b in ["JARDIN AZUAYO", "MACHALA", "29 DE OCTUBRE", "PRODUBANCO", "JEP"]):
+                    df_ap['tipo_ahorro'] = "Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                elif "AUSTRO" in banco_upper:
+                    df_ap['tipo_ahorro'] = "Grupo 2: Banco del Austro"
+                elif "COOPERCO" in banco_upper:
+                    df_ap['tipo_ahorro'] = "Grupo 3: Cooperco"
+                elif "SOLIDARIO" in banco_upper:
+                    df_ap['tipo_ahorro'] = "Grupo 4: Banco Solidario"
+                else:
+                    df_ap['tipo_ahorro'] = "Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                
+                # Extracción provisional de columnas (esperando tus instrucciones para cada grupo)
                 df_ap['monto_minimo'] = safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0).fillna(0.0)
                 df_ap['monto_maximo'] = safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0).fillna(99999999.0)
+                df_ap['dias_minimo'] = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1).fillna(1).astype(int)
+                df_ap['dias_maximo'] = safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias'], 9999).fillna(9999).astype(int)
+                df_ap['tna'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0).fillna(0.0)
                 
-                # Extracción flexible de plazos (días o meses)
-                dmin = safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias', 'meses_minimo', 'plazo_minimo_meses'], 1).fillna(1).astype(int)
-                dmax = safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias', 'meses_maximo', 'plazo_maximo_meses'], 9999).fillna(9999).astype(int)
-                
-                # Conversión Inteligente: Si el plazo máximo tabulado es <= 120, asumimos que son meses y multiplicamos por 30
-                if dmax.max() <= 120:
-                    dmin = dmin * 30
-                    dmax = dmax * 30
-                    
-                df_ap['dias_minimo'] = dmin
-                df_ap['dias_maximo'] = dmax
-                
-                df_ap['tasa_base'] = safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0).fillna(0.0)
-                df_ap['bonificacion_premio'] = safe_get(df_t, ['bonificacion_premio', 'tasa_premio'], 0.0).fillna(0.0)
-                df_ap['tasa_total'] = df_ap['tasa_base'] + df_ap['bonificacion_premio']
                 tablas_ap.append(df_ap)
             elif idx == 0:
                 df_pf = pd.DataFrame()
@@ -190,12 +172,10 @@ def cargar_tasas_referenciales():
         response = requests.get(DRIVE_URL, timeout=5)
         if response.status_code == 200: content = io.BytesIO(response.content)
     except Exception: pass
-    
     xl_source = content if content else LOCAL_BACKUP_PATH
     try:
         xl_doc = pd.ExcelFile(xl_source)
-        if "Tasas Referenciales" in xl_doc.sheet_names:
-            return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
+        if "Tasas Referenciales" in xl_doc.sheet_names: return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
     except Exception: pass
     return pd.DataFrame()
 
@@ -203,9 +183,7 @@ def formatear_nombre_banco(nombre):
     palabras = nombre.strip().split()
     if len(palabras) > 1:
         mitad = (len(palabras) + 1) // 2
-        linea1 = " ".join(palabras[:mitad])
-        linea2 = " ".join(palabras[mitad:])
-        return f"{linea1}<br>{linea2}"
+        return f"{' '.join(palabras[:mitad])}<br>{' '.join(palabras[mitad:])}"
     return nombre
 
 # =========================================================================
@@ -224,7 +202,6 @@ if df_pf.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
     st.stop()
 
-# Definición de la estructura de pestañas
 tab_pf, tab_ap = st.tabs(["💰 Plazo Fijo", "📅 Ahorro Programado"])
 
 # -------------------------------------------------------------------------
@@ -263,8 +240,7 @@ with tab_pf:
             ganancia = f"${row['ganancia_estimada']:,.2f}"
             html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
-        table_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>"""
-        st.markdown(table_html, unsafe_allow_html=True)
+        st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
 # PESTAÑA 2: AHORRO PROGRAMADO
@@ -273,125 +249,85 @@ with tab_ap:
     if df_ap.empty:
         st.info("No se encontraron productos de Ahorro Programado en la base de datos.")
     else:
-        st.markdown("<br><h3 style='text-align: center;'>🔍 Clasificación del Plan</h3>", unsafe_allow_html=True)
+        st.markdown("<br><h3 style='text-align: center;'>🔍 Seleccionar Grupo a Comparar</h3>", unsafe_allow_html=True)
         
-        # Filtro de tipo de ahorro programado
-        tipo_seleccion = st.radio(
-            "Selecciona la estructura del ahorro:", 
-            ["Todas las opciones", "Tradicional (Tasa Fija Única)", "Con Premio/Bono por Cumplimiento"],
-            horizontal=False,
+        grupo_seleccionado = st.selectbox(
+            "Filtrar por Instituciones con estructura similar:",
+            [
+                "Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)",
+                "Grupo 2: Banco del Austro",
+                "Grupo 3: Cooperco",
+                "Grupo 4: Banco Solidario"
+            ],
             label_visibility="collapsed"
         )
         
         st.markdown("<h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
             col1, col2 = st.columns(2)
-            with col1: ahorro_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
-            with col2: meses_input = st.number_input("Plazo a cumplir (Meses)", min_value=1, max_value=120, value=None, step=1)
+            with col1: cuota_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
+            with col2: dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
-        cuota = ahorro_input if ahorro_input is not None else 100.0
-        meses = meses_input if meses_input is not None else 12
-        dias_ap = meses * 30
+        cuota = cuota_input if cuota_input is not None else 100.0
+        dias_ap = dias_ap_input if dias_ap_input is not None else 360
 
-        # Aplicar el filtro de estructura según lo que seleccionó el usuario
-        df_ap_filtrado = df_ap.copy()
-        if "Tradicional" in tipo_seleccion:
-            df_ap_filtrado = df_ap_filtrado[df_ap_filtrado['bonificacion_premio'] == 0]
-        elif "Premio" in tipo_seleccion:
-            df_ap_filtrado = df_ap_filtrado[df_ap_filtrado['bonificacion_premio'] > 0]
+        df_ap_grupo = df_ap[df_ap['tipo_ahorro'] == grupo_seleccionado].copy()
 
-        # Validar rangos de monto y plazo
-        filtrado_ap = df_ap_filtrado[(df_ap_filtrado['monto_minimo'] <= cuota) & (df_ap_filtrado['monto_maximo'] >= cuota) & 
-                                     (df_ap_filtrado['dias_minimo'] <= dias_ap) & (df_ap_filtrado['dias_maximo'] >= dias_ap)].copy()
+        filtrado_ap = df_ap_grupo[(df_ap_grupo['monto_minimo'] <= cuota) & (df_ap_grupo['monto_maximo'] >= cuota) & 
+                                  (df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
 
         if filtrado_ap.empty:
-            st.error(f"No hay opciones en esta categoría para una cuota de ${cuota:,.2f} a {meses} meses.")
+            st.error(f"No hay opciones en este grupo para una cuota de ${cuota:,.2f} a {dias_ap} días.")
         else:
-            # Fórmula de Acumulación Simple para comparar rendimiento relativo
-            r_mensual = (filtrado_ap['tasa_total'] / 100.0) / 12.0
-            fv = np.where(r_mensual > 0, cuota * (((1 + r_mensual)**meses - 1) / r_mensual) * (1 + r_mensual), cuota * meses)
-            filtrado_ap['total_acumulado'] = fv
-            
-            top3_ap = filtrado_ap.sort_values(by='tasa_total', ascending=False).head(3).reset_index(drop=True)
+            top3_ap = filtrado_ap.sort_values(by='tna', ascending=False).head(3).reset_index(drop=True)
             
             st.markdown("---")
             st.markdown("<h3 style='text-align: center;'>🏆 Mejor Opción Ahorro Programado</h3>", unsafe_allow_html=True)
             ganador_ap = top3_ap.iloc[0]
-            texto_bono = f" (Incluye Premio del {ganador_ap['bonificacion_premio']:.2f}%)" if ganador_ap['bonificacion_premio'] > 0 else ""
             
-            st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({ganador_ap['producto'].title()})** con una Tasa Total de **{ganador_ap['tasa_total']:.2f}%**{texto_bono}. Obtendrías un acumulado estimado de **${ganador_ap['total_acumulado']:,.2f}**")
+            st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({ganador_ap['producto'].title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
 
             html_rows_ap = ""
             for idx, row in top3_ap.iterrows():
                 banco_fmt = formatear_nombre_banco(row['banco'])
                 prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{row['producto'].title()}</span>"
                 institucion = f"{banco_fmt}<br>{prod_fmt}"
+                rango_dias = f"{row['dias_minimo']} - {row['dias_maximo']} días"
+                tna = f"{row['tna']:.2f}%"
                 
-                tasa_base = f"{row['tasa_base']:.2f}%"
-                bono = f"+{row['bonificacion_premio']:.2f}%" if row['bonificacion_premio'] > 0 else "-"
-                bono_style = "color: #f59e0b; font-weight: bold;" if row['bonificacion_premio'] > 0 else "color: #64748B;"
-                tasa_total = f"{row['tasa_total']:.2f}%"
-                acumulado = f"${row['total_acumulado']:,.2f}"
-                
-                html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{tasa_base}</td><td><span style='{bono_style}'>{bono}</span></td><td><span style='color: #22c55e; font-weight: bold;'>{tasa_total}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{acumulado}</span></td></tr>"
+                html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td></tr>"
 
-            table_ap_html = f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Tasa<br>Base</th><th>Premio /<br>Bono</th><th>Tasa<br>Total</th><th>Total<br>Estimado</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>"""
-            st.markdown(table_ap_html, unsafe_allow_html=True)
+            st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo</th><th>TNA<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# KPIS GLOBALES DE TASAS REFERENCIALES (BCE) FUERA DE LAS PESTAÑAS
+# KPIS GLOBALES (BCE)
 # -------------------------------------------------------------------------
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("---")
+st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
 
 df_ref = cargar_tasas_referenciales()
-
 if not df_ref.empty and len(df_ref.columns) >= 2:
     df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
-    tasas_limpias = df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip()
-    df_ref['tasa_val'] = pd.to_numeric(tasas_limpias, errors='coerce')
-    
-    df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).copy()
+    df_ref['tasa_val'] = pd.to_numeric(df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip(), errors='coerce')
+    df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).sort_values('fecha_dt')
 
     if not df_validos.empty:
-        df_validos = df_validos.sort_values('fecha_dt')
         fecha_actual = datetime.datetime.now()
+        df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == fecha_actual.year) & (df_validos['fecha_dt'].dt.month == fecha_actual.month)]
         
-        anio_actual = fecha_actual.year
-        mes_actual = fecha_actual.month
-        df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == anio_actual) & (df_validos['fecha_dt'].dt.month == mes_actual)]
-
-        if not df_mes_actual.empty:
-            tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
-            fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
-        else:
-            tasa_actual = df_validos.iloc[-1]['tasa_val']
-            fecha_kpi = df_validos.iloc[-1]['fecha_dt']
+        tasa_actual = df_mes_actual.iloc[-1]['tasa_val'] if not df_mes_actual.empty else df_validos.iloc[-1]['tasa_val']
+        fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt'] if not df_mes_actual.empty else df_validos.iloc[-1]['fecha_dt']
 
         meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-        nombre_mes = meses_nombres[fecha_kpi.month - 1]
-        etiqueta_mes_anio = f"{nombre_mes} {fecha_kpi.year}"
+        etiqueta_mes = f"{meses_nombres[fecha_kpi.month - 1]} {fecha_kpi.year}"
+        tasa_promedio_anio = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]['tasa_val'].mean()
 
-        df_anio_actual = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]
-        tasa_promedio_anio = df_anio_actual['tasa_val'].mean()
-
-        kpis_side_by_side = f"""
+        st.markdown(f"""
         <div class="kpi-flex-container">
-            <div class="kpi-card-compact">
-                <div class="kpi-title-compact">Referencial Actual<br>({etiqueta_mes_anio})</div>
-                <div class="kpi-value-compact" style="color: #22c55e;">{tasa_actual:.2f}%</div>
-            </div>
-            <div class="kpi-card-compact">
-                <div class="kpi-title-compact">Promedio Anual<br>({fecha_kpi.year})</div>
-                <div class="kpi-value-compact" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div>
-            </div>
-        </div>
-        """
-        st.markdown(kpis_side_by_side, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-    else:
-        st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
-else:
-    st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
+            <div class="kpi-card-compact"><div class="kpi-title-compact">Referencial Actual<br>({etiqueta_mes})</div><div class="kpi-value-compact" style="color: #22c55e;">{tasa_actual:.2f}%</div></div>
+            <div class="kpi-card-compact"><div class="kpi-title-compact">Promedio Anual<br>({fecha_kpi.year})</div><div class="kpi-value-compact" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div></div>
+        </div><br>
+        """, unsafe_allow_html=True)
+    else: st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
+else: st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
