@@ -256,26 +256,38 @@ def cargar_datos_inversiones():
     return pd.DataFrame()
 
 # =========================================================================
-# FUNCIÓN DE CARGA DE TASAS REFERENCIALES (CON CACHÉ)
+# FUNCIÓN DE CARGA DE TASAS REFERENCIALES (FALLBACK ROBUSTO A LOCAL)
 # =========================================================================
 @st.cache_data(ttl=3600)
 def cargar_tasas_referenciales():
     content = None
+    # Intento 1: Descargar desde Drive
     try:
-        response = requests.get(DRIVE_URL, timeout=10)
+        response = requests.get(DRIVE_URL, timeout=5)
         if response.status_code == 200:
             content = io.BytesIO(response.content)
     except Exception:
-        content = None
+        pass
 
+    if content is not None:
+        try:
+            xl_drive = pd.ExcelFile(content)
+            # Si el archivo de Drive SI TIENE la pestaña, la usamos
+            if "Tasas Referenciales" in xl_drive.sheet_names:
+                return pd.read_excel(xl_drive, sheet_name="Tasas Referenciales")
+        except Exception:
+            pass
+
+    # Intento 2 (Fallback): Si Drive falla o el Excel en Drive ESTÁ DESACTUALIZADO y no tiene la pestaña,
+    # forzamos la lectura del archivo local en tu computadora.
     try:
-        if content is None:
-            df_ref = pd.read_excel(LOCAL_BACKUP_PATH, sheet_name="Tasas Referenciales")
-        else:
-            df_ref = pd.read_excel(content, sheet_name="Tasas Referenciales")
-        return df_ref
+        xl_local = pd.ExcelFile(LOCAL_BACKUP_PATH)
+        if "Tasas Referenciales" in xl_local.sheet_names:
+            return pd.read_excel(xl_local, sheet_name="Tasas Referenciales")
     except Exception:
-        return pd.DataFrame()
+        pass
+
+    return pd.DataFrame()
 
 def formatear_nombre_banco(nombre):
     palabras = nombre.strip().split()
@@ -378,46 +390,58 @@ else:
 # =========================================================================
 df_ref = cargar_tasas_referenciales()
 
-if not df_ref.empty and "DateTime" in df_ref.columns:
-    df_ref['fecha_dt'] = pd.to_datetime(df_ref['DateTime'], dayfirst=True, errors='coerce')
+# Verificamos que tenga datos y al menos 2 columnas para no depender del nombre exacto del encabezado
+if not df_ref.empty and len(df_ref.columns) >= 2:
+    # Usamos iloc para leer la Columna 0 (Fechas) y Columna 1 (Tasas) forzadamente
+    df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
     df_ref['tasa_val'] = pd.to_numeric(df_ref.iloc[:, 1], errors='coerce')
-    df_ref = df_ref.dropna(subset=['fecha_dt', 'tasa_val'])
+    
+    # Limpiamos errores de conversión
+    df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).copy()
 
-    if not df_ref.empty:
+    if not df_validos.empty:
+        df_validos = df_validos.sort_values('fecha_dt') # Ordenar cronológicamente por seguridad
+        
         fecha_actual = datetime.datetime.now()
         anio_actual = fecha_actual.year
         mes_actual = fecha_actual.month
 
-        # Filtrar dato del mes y año actual
-        df_mes_actual = df_ref[(df_ref['fecha_dt'].dt.year == anio_actual) & (df_ref['fecha_dt'].dt.month == mes_actual)]
+        # Filtrar dato exacto del mes y año actual
+        df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == anio_actual) & (df_validos['fecha_dt'].dt.month == mes_actual)]
 
         if not df_mes_actual.empty:
             tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
             fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
         else:
-            # Si aún no existe el registro del mes actual exacto, tomar el último registro disponible
-            tasa_actual = df_ref.iloc[-1]['tasa_val']
-            fecha_kpi = df_ref.iloc[-1]['fecha_dt']
+            # Si aún no publican la del mes actual, tomamos el último registro histórico disponible
+            tasa_actual = df_validos.iloc[-1]['tasa_val']
+            fecha_kpi = df_validos.iloc[-1]['fecha_dt']
 
         meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
         nombre_mes = meses_nombres[fecha_kpi.month - 1]
         etiqueta_mes_anio = f"{nombre_mes} {fecha_kpi.year}"
 
-        # Filtrar datos del año actual para el promedio
-        df_anio_actual = df_ref[df_ref['fecha_dt'].dt.year == fecha_kpi.year]
+        # Filtrar todos los datos del año correspondiente para sacar el promedio
+        df_anio_actual = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]
         tasa_promedio_anio = df_anio_actual['tasa_val'].mean()
 
+        # Renderizado Visual de la Sección
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("---")
         st.subheader("📊 Tasas Pasivas Referenciales (BCE)")
 
         kpi_col1, kpi_col2 = st.columns(2)
         with kpi_col1:
             st.metric(
-                label=f"Tasa Referencial Actual ({etiqueta_mes_anio})",
+                label=f"Referencial Actual ({etiqueta_mes_anio})",
                 value=f"{tasa_actual:.2f}%"
             )
         with kpi_col2:
             st.metric(
-                label=f"Tasa Promedio Anual ({fecha_kpi.year})",
+                label=f"Promedio Anual ({fecha_kpi.year})",
                 value=f"{tasa_promedio_anio:.2f}%"
             )
+else:
+    # Aviso sutil en caso de que ni en Drive ni en Local se encuentre la tabla configurada correctamente
+    st.markdown("<br><hr>", unsafe_allow_html=True)
+    st.info("📌 Los datos de 'Tasas Referenciales' aún no están sincronizados en el archivo de Inversiones.")
