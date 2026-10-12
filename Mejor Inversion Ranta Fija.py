@@ -23,26 +23,132 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS
+# Estilos CSS personalizados
 st.markdown("""
 <style>
+    /* Centrar todos los títulos y encabezados */
+    h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+        text-align: center !important;
+    }
+
+    /* Ocultar texto auxiliar e instrucciones ("Press Enter to submit form", etc.) */
     [data-testid="stInputInstruction"], 
     small[data-testid="stInputInstruction"], 
     div[data-testid="InputInstruction"],
-    div[data-baseweb="typo-caption"] { display: none !important; }
-    input::-webkit-input-placeholder, input::-moz-placeholder, input:-ms-input-placeholder, input::placeholder { color: transparent !important; opacity: 0 !important; }
-    div[data-baseweb="input"] input { text-align: center !important; font-size: 18px !important; font-weight: 600 !important; }
-    div[data-testid="stNumberInputContainer"] button, button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] { display: none !important; }
-    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
-    input[type=number] { -moz-appearance: textfield !important; }
-    .table-container { width: 100%; overflow-x: auto; margin-top: 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); background-color: #0F172A; }
-    .custom-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    .custom-table th { background-color: #1E293B; color: #FFFFFF; text-align: center !important; vertical-align: middle !important; padding: 10px 8px; font-size: 13px; font-weight: 700; line-height: 1.25; white-space: nowrap; border-bottom: 2px solid #334155; border-top: 1px solid #334155; }
-    .custom-table td { text-align: center !important; vertical-align: middle !important; padding: 10px 8px; font-size: 14px; white-space: nowrap; border-bottom: 1px solid #334155; }
-    .custom-table th:nth-child(1) { position: sticky; left: 0; z-index: 5; background-color: #1E293B; min-width: 110px; max-width: 130px; white-space: normal !important; word-wrap: break-word !important; border-right: 2px solid #64748B !important; }
-    .custom-table td:nth-child(1) { position: sticky; left: 0; z-index: 3; background-color: #0F172A; min-width: 110px; max-width: 130px; white-space: normal !important; word-wrap: break-word !important; line-height: 1.2; border-right: 2px solid #64748B !important; }
+    div[data-baseweb="typo-caption"] { 
+        display: none !important; 
+    }
+    input::-webkit-input-placeholder, input::-moz-placeholder, input:-ms-input-placeholder, input::placeholder { 
+        color: transparent !important; 
+        opacity: 0 !important; 
+    }
+
+    /* Centrado de texto en las casillas del formulario */
+    div[data-baseweb="input"] input { 
+        text-align: center !important; 
+        font-size: 18px !important; 
+        font-weight: 600 !important; 
+    }
+
+    /* Ocultar botones de incremento y decremento (+/-) y flechas */
+    div[data-testid="stNumberInputContainer"] button, 
+    button[data-testid="stNumberInputStepDown"], 
+    button[data-testid="stNumberInputStepUp"] { 
+        display: none !important; 
+    }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none !important; 
+        margin: 0 !important; 
+    }
+    input[type=number] { 
+        -moz-appearance: textfield !important; 
+    }
+
+    /* Contenedor principal de tabla con desplazamiento horizontal */
+    .table-container { 
+        width: 100%; 
+        overflow-x: auto; 
+        margin-top: 15px; 
+        border-radius: 10px; 
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15); 
+        background-color: #0F172A; 
+    }
+    .custom-table { 
+        width: 100%; 
+        border-collapse: separate; 
+        border-spacing: 0; 
+        table-layout: auto; 
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+    }
+    .custom-table th { 
+        background-color: #1E293B; 
+        color: #FFFFFF; 
+        text-align: center !important; 
+        vertical-align: middle !important; 
+        padding: 10px 8px; 
+        font-size: 13px; 
+        font-weight: 700; 
+        line-height: 1.25; 
+        white-space: nowrap; 
+        border-bottom: 2px solid #334155; 
+        border-top: 1px solid #334155; 
+    }
+    .custom-table td { 
+        text-align: center !important; 
+        vertical-align: middle !important; 
+        padding: 10px 8px; 
+        font-size: 14px; 
+        white-space: nowrap; 
+        border-bottom: 1px solid #334155; 
+    }
+    .custom-table th:nth-child(1) { 
+        position: sticky; 
+        left: 0; 
+        z-index: 5; 
+        background-color: #1E293B; 
+        min-width: 110px; 
+        max-width: 130px; 
+        white-space: normal !important; 
+        word-wrap: break-word !important; 
+        border-right: 2px solid #64748B !important; 
+    }
+    .custom-table td:nth-child(1) { 
+        position: sticky; 
+        left: 0; 
+        z-index: 3; 
+        background-color: #0F172A; 
+        min-width: 110px; 
+        max-width: 130px; 
+        white-space: normal !important; 
+        word-wrap: break-word !important; 
+        line-height: 1.2; 
+        border-right: 2px solid #64748B !important; 
+    }
     .custom-table tr:nth-child(even) td { background-color: #182234 !important; }
     .custom-table tr:hover td { background-color: #243248 !important; }
+
+    /* Diseños de recuadros / tarjetas para KPIs */
+    .kpi-card {
+        background-color: #1E293B;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 16px 10px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        margin-bottom: 10px;
+    }
+    .kpi-title {
+        color: #94A3B8;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        line-height: 1.3;
+    }
+    .kpi-value {
+        font-size: 32px;
+        font-weight: 800;
+        line-height: 1.1;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -129,56 +235,33 @@ def cargar_datos_inversiones():
     return pd.concat(registros, ignore_index=True) if registros else pd.DataFrame()
 
 # =========================================================================
-# CARGA DE TASAS REFERENCIALES (Con logs en Terminal)
+# CARGA DE TASAS REFERENCIALES
 # =========================================================================
 @st.cache_data(ttl=3600)
 def cargar_tasas_referenciales():
-    print("\n\n" + "="*50)
-    print("--- DEBUG: INICIANDO CARGA DE TASAS REFERENCIALES ---")
     content = None
-    
     try:
-        print("DEBUG: Intentando descargar desde Drive...")
         response = requests.get(DRIVE_URL, timeout=5)
         if response.status_code == 200:
             content = io.BytesIO(response.content)
-            print("DEBUG: Descarga de Drive exitosa.")
-        else:
-            print(f"DEBUG: Falló Drive. Código de estado HTTP: {response.status_code}")
-    except Exception as e:
-        print(f"DEBUG: Error al conectar con Drive: {e}")
+    except Exception:
+        pass
 
     if content is not None:
         try:
             xl_drive = pd.ExcelFile(content)
-            print(f"DEBUG: Hojas detectadas en el Excel de Drive: {xl_drive.sheet_names}")
             if "Tasas Referenciales" in xl_drive.sheet_names:
-                df = pd.read_excel(xl_drive, sheet_name="Tasas Referenciales")
-                print("DEBUG: Hoja 'Tasas Referenciales' leída correctamente desde Drive.")
-                print(f"DEBUG: Columnas crudas en Drive: {df.columns.tolist()}")
-                print(f"DEBUG: Primeras 3 filas crudas:\n{df.head(3)}")
-                return df
-            else:
-                print("DEBUG: La hoja 'Tasas Referenciales' NO EXISTE en el archivo de Drive.")
-        except Exception as e:
-            print(f"DEBUG: Error procesando Excel de Drive: {e}")
+                return pd.read_excel(xl_drive, sheet_name="Tasas Referenciales")
+        except Exception:
+            pass
 
-    print(f"DEBUG: Intentando cargar archivo local: {LOCAL_BACKUP_PATH}")
     try:
         xl_local = pd.ExcelFile(LOCAL_BACKUP_PATH)
-        print(f"DEBUG: Hojas detectadas en el Excel Local: {xl_local.sheet_names}")
         if "Tasas Referenciales" in xl_local.sheet_names:
-            df = pd.read_excel(xl_local, sheet_name="Tasas Referenciales")
-            print("DEBUG: Hoja 'Tasas Referenciales' leída correctamente desde Local.")
-            print(f"DEBUG: Columnas crudas en Local: {df.columns.tolist()}")
-            print(f"DEBUG: Primeras 3 filas crudas:\n{df.head(3)}")
-            return df
-        else:
-            print("DEBUG: La hoja 'Tasas Referenciales' NO EXISTE en el archivo Local.")
-    except Exception as e:
-        print(f"DEBUG: Error procesando Excel Local: {e}")
+            return pd.read_excel(xl_local, sheet_name="Tasas Referenciales")
+    except Exception:
+        pass
 
-    print("DEBUG: No se pudo cargar la hoja de ninguna fuente.")
     return pd.DataFrame()
 
 def formatear_nombre_banco(nombre):
@@ -193,7 +276,7 @@ def formatear_nombre_banco(nombre):
 # =========================================================================
 # INTERFAZ PRINCIPAL
 # =========================================================================
-st.title("Mejor Inversión Renta Fija")
+st.markdown("<h1 style='text-align: center;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
 
 col_btn1, col_btn2 = st.columns([3, 1])
 with col_btn2:
@@ -206,7 +289,8 @@ if df_datos.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
     st.stop()
 
-st.subheader("📋 Parámetros de Inversión")
+st.markdown("<h3 style='text-align: center;'>📋 Parámetros de Inversión</h3>", unsafe_allow_html=True)
+
 with st.form(key="formulario_inversion"):
     col1, col2 = st.columns(2)
     with col1:
@@ -226,8 +310,9 @@ if filtrado.empty:
 else:
     filtrado['ganancia_estimada'] = monto * (filtrado['tasa_nominal_porcentaje'] / 100.0) * (plazo_dias / 360.0)
     top5 = filtrado.sort_values(by='tasa_nominal_porcentaje', ascending=False).head(5).reset_index(drop=True)
+    
     st.markdown("---")
-    st.subheader("🏆 Mejor Opción Plazo Fijo")
+    st.markdown("<h3 style='text-align: center;'>🏆 Mejor Opción Plazo Fijo</h3>", unsafe_allow_html=True)
     ganador = top5.iloc[0]
     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
@@ -243,71 +328,63 @@ else:
     st.markdown(table_html, unsafe_allow_html=True)
 
 # =========================================================================
-# KPIS DE TASAS REFERENCIALES (BCE)
+# KPIS DE TASAS REFERENCIALES (BCE) EN RECUADROS
 # =========================================================================
 df_ref = cargar_tasas_referenciales()
 
-print("--- DEBUG: PROCESANDO DATOS PARA KPIS ---")
-print(f"DEBUG: Tamaño del df_ref extraído: {df_ref.shape}")
+if not df_ref.empty and len(df_ref.columns) >= 2:
+    df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
+    tasas_limpias = df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip()
+    df_ref['tasa_val'] = pd.to_numeric(tasas_limpias, errors='coerce')
+    
+    df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).copy()
 
-try:
-    if not df_ref.empty and len(df_ref.columns) >= 2:
-        print("DEBUG: Iniciando parseo de fechas...")
-        df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
-        print(f"DEBUG: Total fechas Nulas post-parseo: {df_ref['fecha_dt'].isna().sum()}")
+    if not df_validos.empty:
+        df_validos = df_validos.sort_values('fecha_dt')
+        fecha_actual = datetime.datetime.now()
         
-        print("DEBUG: Limpiando y parseando tasas a float...")
-        tasas_limpias = df_ref.iloc[:, 1].astype(str).str.replace(',', '.').str.replace('%', '').str.strip()
-        df_ref['tasa_val'] = pd.to_numeric(tasas_limpias, errors='coerce')
-        print(f"DEBUG: Total tasas Nulas post-parseo: {df_ref['tasa_val'].isna().sum()}")
-        
-        df_validos = df_ref.dropna(subset=['fecha_dt', 'tasa_val']).copy()
-        print(f"DEBUG: Total de filas válidas finales: {len(df_validos)}")
+        anio_actual = fecha_actual.year
+        mes_actual = fecha_actual.month
+        df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == anio_actual) & (df_validos['fecha_dt'].dt.month == mes_actual)]
 
-        if not df_validos.empty:
-            df_validos = df_validos.sort_values('fecha_dt')
-            fecha_actual = datetime.datetime.now()
-            print(f"DEBUG: Fecha actual del sistema: {fecha_actual}")
-            
-            anio_actual = fecha_actual.year
-            mes_actual = fecha_actual.month
-            df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == anio_actual) & (df_validos['fecha_dt'].dt.month == mes_actual)]
-
-            if not df_mes_actual.empty:
-                tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
-                fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
-            else:
-                tasa_actual = df_validos.iloc[-1]['tasa_val']
-                fecha_kpi = df_validos.iloc[-1]['fecha_dt']
-
-            meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-            nombre_mes = meses_nombres[fecha_kpi.month - 1]
-            etiqueta_mes_anio = f"{nombre_mes} {fecha_kpi.year}"
-
-            df_anio_actual = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]
-            tasa_promedio_anio = df_anio_actual['tasa_val'].mean()
-
-            print(f"DEBUG: KPIs calculados -> Actual: {tasa_actual} | Promedio: {tasa_promedio_anio}")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("---")
-            st.subheader("📊 Tasas Pasivas Referenciales (BCE)")
-            kpi_col1, kpi_col2 = st.columns(2)
-            with kpi_col1:
-                st.metric(label=f"Referencial Actual ({etiqueta_mes_anio})", value=f"{tasa_actual:.2f}%")
-            with kpi_col2:
-                st.metric(label=f"Promedio Anual ({fecha_kpi.year})", value=f"{tasa_promedio_anio:.2f}%")
+        if not df_mes_actual.empty:
+            tasa_actual = df_mes_actual.iloc[-1]['tasa_val']
+            fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt']
         else:
-            print("DEBUG: df_validos quedó vacío después de eliminar los nulos.")
-            st.markdown("<br><hr>", unsafe_allow_html=True)
-            st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'. Verifica que contenga fechas y tasas numéricas.")
+            tasa_actual = df_validos.iloc[-1]['tasa_val']
+            fecha_kpi = df_validos.iloc[-1]['fecha_dt']
+
+        meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        nombre_mes = meses_nombres[fecha_kpi.month - 1]
+        etiqueta_mes_anio = f"{nombre_mes} {fecha_kpi.year}"
+
+        df_anio_actual = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]
+        tasa_promedio_anio = df_anio_actual['tasa_val'].mean()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        kpi_col1, kpi_col2 = st.columns(2)
+        with kpi_col1:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Referencial Actual<br>({etiqueta_mes_anio})</div>
+                <div class="kpi-value" style="color: #22c55e;">{tasa_actual:.2f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with kpi_col2:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Promedio Anual<br>({fecha_kpi.year})</div>
+                <div class="kpi-value" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
     else:
-        print("DEBUG: Condición IF no cumplida (el DataFrame está vacío o tiene menos de 2 columnas).")
         st.markdown("<br><hr>", unsafe_allow_html=True)
-        st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'. Verifica que contenga fechas y tasas numéricas.")
-except Exception as e:
-    print(f"DEBUG: Ocurrió un error inesperado al calcular los KPIs: {e}")
-    import traceback
-    traceback.print_exc()
+        st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
+else:
     st.markdown("<br><hr>", unsafe_allow_html=True)
-    st.error("📌 Ocurrió un error inesperado durante el procesamiento de las Tasas Referenciales.")
+    st.error("📌 Error de lectura: No se pudo procesar la hoja de 'Tasas Referenciales'.")
