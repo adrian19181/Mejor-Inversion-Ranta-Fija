@@ -98,15 +98,16 @@ def cargar_datos_inversiones():
                 cols_idx = []
                 grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 
-                if "JARDIN AZUAYO" in banco_norm:
+                # Reglas estrictas para extracción del Grupo 1 según la indicación
+                if "JARDIN AZUAYO" in banco_norm and "CHANCHITO" in title:
                     cols_idx = [5, 6, 7] # F, G, H
-                elif "MACHALA" in banco_norm:
+                elif "MACHALA" in banco_norm and "PROGRAMADO" in title:
                     cols_idx = [7, 8, 9] # H, I, J
-                elif "29 DE OCTUBRE" in banco_norm:
+                elif "29 DE OCTUBRE" in banco_norm and "PROGRAMADO" in title:
                     cols_idx = [8, 9, 10] # I, J, K
-                elif "PRODUBANCO" in banco_norm:
+                elif "PRODUBANCO" in banco_norm and "FLEXI" in title:
                     cols_idx = [7, 8, 9] # H, I, J
-                elif "JEP" in banco_norm:
+                elif "JEP" in banco_norm and "FONDO JEP" in title:
                     cols_idx = [7, 8, 9] # H, I, J
                 elif "AUSTRO" in banco_norm:
                     grupo_nombre = "🔵 Grupo 2: Banco del Austro"
@@ -120,6 +121,7 @@ def cargar_datos_inversiones():
                     if df_raw.shape[1] <= max_col_needed:
                         df_raw = df_raw.reindex(columns=range(max_col_needed + 1))
                         
+                    # Extraer desde la fila 3 (índice 2)
                     df_temp = df_raw.iloc[2:, cols_idx].copy()
                     df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
                     df_temp = df_temp.dropna(how='all')
@@ -290,11 +292,19 @@ with tab_ap:
             label_visibility="collapsed"
         )
         
+        es_grupo_1 = "Grupo 1" in grupo_seleccionado
+        
         st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
-            col1, col2 = st.columns(2)
-            with col1: cuota_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
-            with col2: dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
+            if es_grupo_1:
+                # Omitir el campo de monto de ahorro mensual para el Grupo 1
+                dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
+                cuota_input = 0.0
+            else:
+                col1, col2 = st.columns(2)
+                with col1: cuota_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
+                with col2: dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
+                
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
         cuota = cuota_input if cuota_input is not None else 100.0
@@ -302,22 +312,28 @@ with tab_ap:
 
         df_ap_grupo = df_ap[df_ap['tipo_ahorro'] == grupo_seleccionado].copy()
 
-        filtrado_ap = df_ap_grupo[(df_ap_grupo['monto_minimo'] <= cuota) & (df_ap_grupo['monto_maximo'] >= cuota) & 
-                                  (df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
+        if es_grupo_1:
+            filtrado_ap = df_ap_grupo[(df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
+        else:
+            filtrado_ap = df_ap_grupo[(df_ap_grupo['monto_minimo'] <= cuota) & (df_ap_grupo['monto_maximo'] >= cuota) & 
+                                      (df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
 
         if filtrado_ap.empty:
-            st.error(f"No hay opciones en este grupo para una cuota de ${cuota:,.2f} a {dias_ap} días.")
+            if es_grupo_1:
+                st.error(f"No hay opciones en este grupo para un plazo de {dias_ap} días.")
+            else:
+                st.error(f"No hay opciones en este grupo para una cuota de ${cuota:,.2f} a {dias_ap} días.")
         else:
-            top3_ap = filtrado_ap.sort_values(by='tna', ascending=False).head(3).reset_index(drop=True)
+            resultados_ap = filtrado_ap.sort_values(by='tna', ascending=False).reset_index(drop=True)
             
             st.markdown("---")
-            st.markdown("<h3 style='text-align: center;'>🏆 Mejor Opción Ahorro Programado</h3>", unsafe_allow_html=True)
-            ganador_ap = top3_ap.iloc[0]
+            st.markdown("<h3 style='text-align: center;'>🏆 Mejores Opciones Ahorro Programado</h3>", unsafe_allow_html=True)
+            ganador_ap = resultados_ap.iloc[0]
             
             st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({ganador_ap['producto'].title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
 
             html_rows_ap = ""
-            for idx, row in top3_ap.iterrows():
+            for idx, row in resultados_ap.iterrows():
                 banco_fmt = formatear_nombre_banco(row['banco'])
                 prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{row['producto'].title()}</span>"
                 institucion = f"{banco_fmt}<br>{prod_fmt}"
