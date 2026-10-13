@@ -96,19 +96,24 @@ def cargar_datos_inversiones():
                 
             if es_ap:
                 cols_idx = []
-                grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                grupo_nombre = None
                 
-                # Reglas estrictas para extracción del Grupo 1 según la indicación
+                # Asignación estricta a grupos para evitar que bancos no deseados entren al Grupo 1
                 if "JARDIN AZUAYO" in banco_norm and "CHANCHITO" in title:
                     cols_idx = [5, 6, 7] # F, G, H
+                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 elif "MACHALA" in banco_norm and "PROGRAMADO" in title:
                     cols_idx = [7, 8, 9] # H, I, J
+                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 elif "29 DE OCTUBRE" in banco_norm and "PROGRAMADO" in title:
                     cols_idx = [8, 9, 10] # I, J, K
+                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 elif "PRODUBANCO" in banco_norm and "FLEXI" in title:
                     cols_idx = [7, 8, 9] # H, I, J
+                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 elif "JEP" in banco_norm and "FONDO JEP" in title:
                     cols_idx = [7, 8, 9] # H, I, J
+                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
                 elif "AUSTRO" in banco_norm:
                     grupo_nombre = "🔵 Grupo 2: Banco del Austro"
                 elif "COOPERCO" in banco_norm:
@@ -116,12 +121,14 @@ def cargar_datos_inversiones():
                 elif "SOLIDARIO" in banco_norm:
                     grupo_nombre = "🟣 Grupo 4: Banco Solidario"
 
+                if grupo_nombre is None:
+                    continue # Excluir estrictamente cualquier otro banco/producto no mapeado
+                    
                 if cols_idx:
                     max_col_needed = max(cols_idx)
                     if df_raw.shape[1] <= max_col_needed:
                         df_raw = df_raw.reindex(columns=range(max_col_needed + 1))
                         
-                    # Extraer desde la fila 3 (índice 2)
                     df_temp = df_raw.iloc[2:, cols_idx].copy()
                     df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
                     df_temp = df_temp.dropna(how='all')
@@ -297,7 +304,6 @@ with tab_ap:
         st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
             if es_grupo_1:
-                # Omitir el campo de monto de ahorro mensual para el Grupo 1
                 dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
                 cuota_input = 0.0
             else:
