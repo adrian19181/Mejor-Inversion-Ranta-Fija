@@ -239,10 +239,6 @@ def cargar_datos_inversiones():
                     if dmin_col:
                         dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
                         dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else pd.Series(9999, index=df_data.index)
-                        
-                        # Si dias_maximo es 0 en filas con tasa, se habilita como rango abierto (1 a 9999)
-                        dmax = dmax.apply(lambda x: 9999 if x == 0 else x)
-                        dmin = dmin.apply(lambda x: 1 if x == 0 else x)
                     else:
                         dmin = pd.Series(1, index=df_data.index)
                         dmax = pd.Series(9999, index=df_data.index)
