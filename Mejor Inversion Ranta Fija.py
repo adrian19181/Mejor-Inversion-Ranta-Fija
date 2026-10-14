@@ -47,7 +47,7 @@ LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 def limpiar_numeros(serie):
     s = pd.Series(serie).astype(str).str.strip()
     s = s.str.replace(r'[%\$]', '', regex=True)
-    s = s.apply(lambda x: x.replace(',', '') if ',' in x and '.' in x else x.replace(',', '.'))
+    s = s.apply(lambda x: x.replace(',', '') if ',' in str(x) and '.' in str(x) else str(x).replace(',', '.'))
     s = s.replace(['nan', 'NAN', 'None', ''], np.nan)
     return pd.to_numeric(s, errors='coerce')
 
@@ -139,119 +139,122 @@ def cargar_datos_inversiones():
     for sheet in xl.sheet_names:
         if sheet == "Tasas Referenciales": continue
         
-        df_raw = pd.read_excel(xl, sheet_name=sheet, header=None)
-        if len(df_raw) < 3: continue
-        
-        banco_norm = str(sheet).upper()
+        try:
+            df_raw = pd.read_excel(xl, sheet_name=sheet, header=None)
+            if len(df_raw) < 3: continue
+            
+            banco_norm = str(sheet).upper()
 
-        non_empty_cols = [i for i in range(df_raw.shape[1]) if not es_columna_vacia(df_raw.iloc[:, i])]
-        if not non_empty_cols: continue
+            non_empty_cols = [i for i in range(df_raw.shape[1]) if not es_columna_vacia(df_raw.iloc[:, i])]
+            if not non_empty_cols: continue
 
-        bloques_tablas = []
-        curr_block = [non_empty_cols[0]]
-        for col_idx in non_empty_cols[1:]:
-            if col_idx == curr_block[-1] + 1:
-                curr_block.append(col_idx)
-            else:
-                bloques_tablas.append(curr_block)
-                curr_block = [col_idx]
-        bloques_tablas.append(curr_block)
+            bloques_tablas = []
+            curr_block = [non_empty_cols[0]]
+            for col_idx in non_empty_cols[1:]:
+                if col_idx == curr_block[-1] + 1:
+                    curr_block.append(col_idx)
+                else:
+                    bloques_tablas.append(curr_block)
+                    curr_block = [col_idx]
+            bloques_tablas.append(curr_block)
 
-        # BLOQUE 1: PLAZO FIJO
-        if len(bloques_tablas) >= 1:
-            cols_pf = bloques_tablas[0]
-            df_bloque_raw = df_raw.iloc[:, cols_pf].copy()
-            row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
-            df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
-            df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
+            # BLOQUE 1: PLAZO FIJO
+            if len(bloques_tablas) >= 1:
+                cols_pf = bloques_tablas[0]
+                df_bloque_raw = df_raw.iloc[:, cols_pf].copy()
+                row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
+                df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
+                df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
-            mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
-            mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
-            dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
-            dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
-            tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+                mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
+                mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
+                dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+                dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
+                tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
 
-            if dmin_col is None and len(df_data.columns) >= 2:
-                dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
-            if tna_col is None and len(df_data.columns) >= 1:
-                tna_col = df_data.columns[-1]
+                if dmin_col is None and len(df_data.columns) >= 2:
+                    dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
+                if tna_col is None and len(df_data.columns) >= 1:
+                    tna_col = df_data.columns[-1]
 
-            if dmin_col and tna_col:
-                mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
-                mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
-                dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
-                dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
-                tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
+                if dmin_col and tna_col:
+                    mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
+                    mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
+                    dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
+                    dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                    tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
 
-                temp_df = pd.DataFrame({
-                    'banco': sheet,
-                    'monto_minimo': mmin,
-                    'monto_maximo': mmax,
-                    'dias_minimo': dmin,
-                    'dias_maximo': dmax,
-                    'tna': tna_base,
-                    'tna_base': tna_base,
-                    'bono': 0.0
-                })
-                temp_df = temp_df[temp_df['tna'] > 0]
-                if not temp_df.empty:
-                    tablas_pf.append(temp_df)
+                    temp_df = pd.DataFrame({
+                        'banco': sheet,
+                        'monto_minimo': mmin,
+                        'monto_maximo': mmax,
+                        'dias_minimo': dmin,
+                        'dias_maximo': dmax,
+                        'tna': tna_base,
+                        'tna_base': tna_base,
+                        'bono': 0.0
+                    })
+                    temp_df = temp_df[temp_df['tna'] > 0]
+                    if not temp_df.empty:
+                        tablas_pf.append(temp_df)
 
-        # BLOQUE 2: AHORRO PROGRAMADO
-        if len(bloques_tablas) >= 2 and any(b in banco_norm for b in BANCOS_AP_VALIDOS):
-            cols_ap = bloques_tablas[1]
-            df_bloque_raw = df_raw.iloc[:, cols_ap].copy()
-            row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
-            df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
-            df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
+            # BLOQUE 2: AHORRO PROGRAMADO
+            if len(bloques_tablas) >= 2 and any(b in banco_norm for b in BANCOS_AP_VALIDOS):
+                cols_ap = bloques_tablas[1]
+                df_bloque_raw = df_raw.iloc[:, cols_ap].copy()
+                row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
+                df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
+                df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
-            mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
-            mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
-            dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
-            dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
-            tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
-            bono_col = next((c for c in df_data.columns if 'bonificac' in c or 'premio' in c or 'bono' in c), None)
+                mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
+                mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
+                dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+                dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
+                tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+                bono_col = next((c for c in df_data.columns if 'bonificac' in c or 'premio' in c or 'bono' in c), None)
 
-            if dmin_col is None and len(df_data.columns) >= 2:
-                dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
-            if tna_col is None and len(df_data.columns) >= 1:
-                tna_col = df_data.columns[-1]
+                if dmin_col is None and len(df_data.columns) >= 2:
+                    dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
+                if tna_col is None and len(df_data.columns) >= 1:
+                    tna_col = df_data.columns[-1]
 
-            if dmin_col and tna_col:
-                mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
-                mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
-                dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
-                dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                if dmin_col and tna_col:
+                    mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
+                    mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
+                    dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
+                    dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
 
-                tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
-                bono_val = limpiar_numeros(df_data[bono_col]).fillna(0.0) if bono_col else pd.Series(0.0, index=df_data.index)
-                tna_total = tna_base + bono_val
+                    tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
+                    bono_val = limpiar_numeros(df_data[bono_col]).fillna(0.0) if bono_col else pd.Series(0.0, index=df_data.index)
+                    tna_total = tna_base + bono_val
 
-                prod_name = "Ahorro Programado"
-                if "JARDIN AZUAYO" in banco_norm: prod_name = "Mi Ahorro Chanchito"
-                elif "PRODUBANCO" in banco_norm: prod_name = "Flexi Ahorro"
-                elif "JEP" in banco_norm: prod_name = "Ahorro Fondo JEP"
-                elif "SOLIDARIO" in banco_norm: prod_name = "Futuro Seguro"
-                elif "AUSTRO" in banco_norm: prod_name = "Ahorro Programado"
-                elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
-                elif "MUTUALISTA AZUAY" in banco_norm: prod_name = "Ahorro Programado"
-                elif "29 DE OCTUBRE" in banco_norm: prod_name = "Ahorro Programado"
-                elif "COOPERCO" in banco_norm: prod_name = "Ahorro Programado"
+                    prod_name = "Ahorro Programado"
+                    if "JARDIN AZUAYO" in banco_norm: prod_name = "Mi Ahorro Chanchito"
+                    elif "PRODUBANCO" in banco_norm: prod_name = "Flexi Ahorro"
+                    elif "JEP" in banco_norm: prod_name = "Ahorro Fondo JEP"
+                    elif "SOLIDARIO" in banco_norm: prod_name = "Futuro Seguro"
+                    elif "AUSTRO" in banco_norm: prod_name = "Ahorro Programado"
+                    elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
+                    elif "MUTUALISTA AZUAY" in banco_norm: prod_name = "Ahorro Programado"
+                    elif "29 DE OCTUBRE" in banco_norm: prod_name = "Ahorro Programado"
+                    elif "COOPERCO" in banco_norm: prod_name = "Ahorro Programado"
 
-                temp_df = pd.DataFrame({
-                    'banco': sheet,
-                    'producto': prod_name,
-                    'monto_minimo': mmin,
-                    'monto_maximo': mmax,
-                    'dias_minimo': dmin,
-                    'dias_maximo': dmax,
-                    'tna': tna_total,
-                    'tna_base': tna_base,
-                    'bono': bono_val
-                })
-                temp_df = temp_df[temp_df['tna'] > 0]
-                if not temp_df.empty:
-                    tablas_ap.append(temp_df)
+                    temp_df = pd.DataFrame({
+                        'banco': sheet,
+                        'producto': prod_name,
+                        'monto_minimo': mmin,
+                        'monto_maximo': mmax,
+                        'dias_minimo': dmin,
+                        'dias_maximo': dmax,
+                        'tna': tna_total,
+                        'tna_base': tna_base,
+                        'bono': bono_val
+                    })
+                    temp_df = temp_df[temp_df['tna'] > 0]
+                    if not temp_df.empty:
+                        tablas_ap.append(temp_df)
+        except Exception:
+            continue
 
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
     df_final_ap = pd.concat(tablas_ap, ignore_index=True) if tablas_ap else pd.DataFrame()
@@ -264,14 +267,16 @@ def cargar_tasas_referenciales():
         response = requests.get(DRIVE_URL, timeout=5)
         if response.status_code == 200: content = io.BytesIO(response.content)
     except Exception: pass
-    xl_source = content if content else LOCAL_BACKUP_PATH
+    
+    xl_source = content if content is not None else LOCAL_BACKUP_PATH
     try:
-        if os.path.exists(xl_source) or isinstance(xl_source, io.BytesIO):
+        is_valid_source = isinstance(xl_source, io.BytesIO) or (isinstance(xl_source, str) and os.path.exists(xl_source))
+        if is_valid_source:
             xl_doc = pd.ExcelFile(xl_source)
-            if "Tasas Referenciales" in xl_doc.sheet_names: return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
+            if "Tasas Referenciales" in xl_doc.sheet_names: 
+                return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
     except Exception: pass
     return pd.DataFrame()
-
 
 st.markdown("<h1 style='text-align: center;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
 
