@@ -83,6 +83,53 @@ def cargar_datos_inversiones():
         if len(df_raw) < 3: continue
         
         banco_norm = str(sheet).upper()
+
+        # =========================================================
+        # EXTRACCIÓN AHORRO PROGRAMADO (GRUPO 1) - MAPEO ESTRICTO
+        # =========================================================
+        cols_ap = None
+        prod_name = "Ahorro Programado"
+        
+        if "JARDIN AZUAYO" in banco_norm:
+            cols_ap = [5, 6, 7] # Columnas F, G, H
+            prod_name = "Mi Ahorro Chanchito"
+        elif "MACHALA" in banco_norm:
+            cols_ap = [7, 8, 9] # Columnas H, I, J
+            prod_name = "Ahorro Programado"
+        elif "29 DE OCTUBRE" in banco_norm:
+            cols_ap = [8, 9, 10] # Columnas I, J, K
+            prod_name = "Ahorro Programado"
+        elif "PRODUBANCO" in banco_norm:
+            cols_ap = [7, 8, 9] # Columnas H, I, J
+            prod_name = "Flexi Ahorro"
+        elif "JEP" in banco_norm:
+            cols_ap = [7, 8, 9] # Columnas H, I, J
+            prod_name = "Ahorro Fondo JEP"
+
+        if cols_ap:
+            try:
+                df_temp = df_raw.iloc[2:, cols_ap].copy()
+                df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
+                df_temp = df_temp.dropna(how='all')
+                
+                temp_ap = pd.DataFrame()
+                temp_ap['banco'] = sheet
+                temp_ap['producto'] = prod_name
+                temp_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                
+                temp_ap['dias_minimo'] = limpiar_numeros(df_temp['dias_minimo']).fillna(1).astype(int)
+                temp_ap['dias_maximo'] = limpiar_numeros(df_temp['dias_maximo']).fillna(9999).astype(int)
+                temp_ap['tna'] = limpiar_numeros(df_temp['tna']).fillna(0.0)
+                
+                temp_ap = temp_ap[temp_ap['tna'] > 0]
+                if not temp_ap.empty:
+                    tablas_ap.append(temp_ap)
+            except Exception:
+                pass
+
+        # =========================================================
+        # EXTRACCIÓN PLAZO FIJO Y OTROS (DINÁMICO POR BLOQUES)
+        # =========================================================
         row0 = df_raw.iloc[0].fillna('').astype(str).str.strip().str.upper()
         row1 = df_raw.iloc[1].fillna('').astype(str).str.strip().str.lower()
         
@@ -108,36 +155,7 @@ def cargar_datos_inversiones():
             
             df_bloque = df_bloque[valid_cols].dropna(how='all')
             
-            es_grupo_1 = False
-            if "JARDIN AZUAYO" in banco_norm and "CHANCHITO" in titulo_bloque: es_grupo_1 = True
-            elif "MACHALA" in banco_norm and "PROGRAMADO" in titulo_bloque: es_grupo_1 = True
-            elif "29 DE OCTUBRE" in banco_norm and "PROGRAMADO" in titulo_bloque: es_grupo_1 = True
-            elif "PRODUBANCO" in banco_norm and "FLEXI" in titulo_bloque: es_grupo_1 = True
-            elif "JEP" in banco_norm and "FONDO JEP" in titulo_bloque: es_grupo_1 = True
-            
-            if es_grupo_1:
-                dmin_col = next((c for c in df_bloque.columns if 'dias_minimo' in c or 'plazo_minimo' in c), None)
-                dmax_col = next((c for c in df_bloque.columns if 'dias_maximo' in c or 'plazo_maximo' in c), None)
-                tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_efectiva' in c or 'tasa_anual' in c), None)
-                
-                if dmin_col and tna_col:
-                    temp_ap = pd.DataFrame()
-                    temp_ap['banco'] = sheet
-                    temp_ap['producto'] = titulo_bloque
-                    temp_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                    
-                    dmin_vals = limpiar_numeros(df_bloque[dmin_col])
-                    dmax_vals = limpiar_numeros(df_bloque[dmax_col]) if dmax_col else dmin_vals
-                    
-                    temp_ap['dias_minimo'] = dmin_vals.fillna(1).astype(int)
-                    temp_ap['dias_maximo'] = dmax_vals.fillna(9999).astype(int)
-                    temp_ap['tna'] = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
-                    
-                    temp_ap = temp_ap[temp_ap['tna'] > 0]
-                    if not temp_ap.empty:
-                        tablas_ap.append(temp_ap)
-                        
-            elif "PLAZO" in titulo_bloque or "INVERSIONES" in titulo_bloque or "POLIZAS" in titulo_bloque:
+            if "PLAZO" in titulo_bloque or "INVERSIONES" in titulo_bloque or "POLIZAS" in titulo_bloque:
                 mmin_col = next((c for c in df_bloque.columns if 'monto_minimo' in c), None)
                 mmax_col = next((c for c in df_bloque.columns if 'monto_maximo' in c), None)
                 dmin_col = next((c for c in df_bloque.columns if 'dias_minimo' in c), None)
@@ -244,33 +262,63 @@ with tab_ap:
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
         dias_ap = dias_ap_input if dias_ap_input is not None else 360
-
         df_ap_grupo = df_ap[df_ap['tipo_ahorro'] == grupo_seleccionado].copy()
         
-        filtrado_ap = df_ap_grupo[(df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
-
-        if filtrado_ap.empty:
-            st.error(f"No hay opciones en este grupo para un plazo de {dias_ap} días.")
+        if df_ap_grupo.empty:
+            st.error("No hay datos cargados para este grupo.")
         else:
-            resultados_ap = filtrado_ap.sort_values(by='tna', ascending=False).reset_index(drop=True)
+            resultados_finales = []
             
-            st.markdown("---")
-            st.markdown("<h3 style='text-align: center;'>🏆 Mejores Opciones Ahorro Programado</h3>", unsafe_allow_html=True)
-            ganador_ap = resultados_ap.iloc[0]
-            
-            st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
-
-            html_rows_ap = ""
-            for idx, row in resultados_ap.iterrows():
-                banco_fmt = formatear_nombre_banco(row['banco'])
-                prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
-                institucion = f"{banco_fmt}<br>{prod_fmt}"
-                rango_dias = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
-                tna = f"{row['tna']:.2f}%"
+            # Recorrer cada banco para extraer su mejor opción basada en los días ingresados
+            for banco in df_ap_grupo['banco'].unique():
+                df_banco = df_ap_grupo[df_ap_grupo['banco'] == banco].copy()
                 
-                html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td></tr>"
+                # 1. Intentar encontrar una coincidencia exacta dentro del rango
+                exact_match = df_banco[(df_banco['dias_minimo'] <= dias_ap) & (df_banco['dias_maximo'] >= dias_ap)]
+                
+                if not exact_match.empty:
+                    # Si coincide, tomamos la de mayor tasa
+                    mejor_opcion = exact_match.sort_values(by='tna', ascending=False).iloc[0]
+                    resultados_finales.append(mejor_opcion)
+                else:
+                    # 2. Si no hay coincidencia exacta (ej. plazos fijos de Machala o JEP), buscar el más cercano
+                    df_banco['distancia'] = df_banco.apply(
+                        lambda row: min(abs(dias_ap - row['dias_minimo']), abs(dias_ap - row['dias_maximo'])), axis=1
+                    )
+                    mejor_opcion = df_banco.sort_values(by=['distancia', 'tna'], ascending=[True, False]).iloc[0]
+                    resultados_finales.append(mejor_opcion)
 
-            st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo</th><th>TNA<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
+            if resultados_finales:
+                # Armar el ranking final ordenando de mayor a menor tasa
+                resultados_ap = pd.DataFrame(resultados_finales).sort_values(by='tna', ascending=False).reset_index(drop=True)
+                
+                st.markdown("---")
+                st.markdown("<h3 style='text-align: center;'>🏆 Mejores Opciones Ahorro Programado</h3>", unsafe_allow_html=True)
+                ganador_ap = resultados_ap.iloc[0]
+                
+                st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
+
+                html_rows_ap = ""
+                for idx, row in resultados_ap.iterrows():
+                    banco_fmt = formatear_nombre_banco(row['banco'])
+                    prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
+                    institucion = f"{banco_fmt}<br>{prod_fmt}"
+                    
+                    es_exacto = (row['dias_minimo'] <= dias_ap <= row['dias_maximo'])
+                    
+                    if row['dias_minimo'] == row['dias_maximo']:
+                        rango_dias = f"{int(row['dias_minimo'])} días"
+                    else:
+                        rango_dias = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+                        
+                    if not es_exacto:
+                        rango_dias += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
+                        
+                    tna = f"{row['tna']:.2f}%"
+                    
+                    html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td></tr>"
+
+                st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
