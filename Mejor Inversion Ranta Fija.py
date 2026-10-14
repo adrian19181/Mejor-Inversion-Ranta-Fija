@@ -71,30 +71,49 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    """Filtra por monto, busca coincidencia exacta o escalón más cercano por cada banco, y ordena."""
-    mask_monto = (df['monto_minimo'].isna() | (df['monto_minimo'] <= monto)) & \
-                 (df['monto_maximo'].isna() | (df['monto_maximo'] >= monto))
-    df_monto = df[mask_monto].copy()
-    
-    if df_monto.empty:
+    """Filtra priorizando la coincidencia o cercanía en DÍAS (plazo) y luego valida el MONTO."""
+    if df.empty:
         return pd.DataFrame()
         
     resultados = []
     
-    for banco in df_monto['banco'].unique():
-        df_banco = df_monto[df_monto['banco'] == banco].copy()
+    for banco in df['banco'].unique():
+        df_banco = df[df['banco'] == banco].copy()
         
-        exact_match = df_banco[(df_banco['dias_minimo'] <= dias) & (df_banco['dias_maximo'] >= dias)]
+        # 1. Buscar coincidencia exacta en DÍAS (plazo)
+        exact_dias = df_banco[(df_banco['dias_minimo'] <= dias) & (df_banco['dias_maximo'] >= dias)]
         
-        if not exact_match.empty:
-            mejor = exact_match.sort_values(by='tna', ascending=False).iloc[0].copy()
+        if not exact_dias.empty:
+            # Entre las filas con días exactos, intentar filtrar por MONTO
+            mask_monto = (exact_dias['monto_minimo'].isna() | (exact_dias['monto_minimo'] <= monto)) & \
+                         (exact_dias['monto_maximo'].isna() | (exact_dias['monto_maximo'] >= monto))
+            exact_monto = exact_dias[mask_monto]
+            
+            if not exact_monto.empty:
+                mejor = exact_monto.sort_values(by='tna', ascending=False).iloc[0].copy()
+            else:
+                mejor = exact_dias.sort_values(by='tna', ascending=False).iloc[0].copy()
+                
             mejor['es_exacto'] = True
             resultados.append(mejor)
         else:
-            df_banco['distancia'] = df_banco.apply(
+            # 2. No hay coincidencia exacta en DÍAS -> Buscar el escalón más cercano de DÍAS
+            df_banco['distancia_dias'] = df_banco.apply(
                 lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
             )
-            mejor = df_banco.sort_values(by=['distancia', 'tna'], ascending=[True, False]).iloc[0].copy()
+            min_dist = df_banco['distancia_dias'].min()
+            closest_dias_rows = df_banco[df_banco['distancia_dias'] == min_dist].copy()
+            
+            # Dentro del escalón más cercano en días, intentar filtrar por MONTO
+            mask_monto = (closest_dias_rows['monto_minimo'].isna() | (closest_dias_rows['monto_minimo'] <= monto)) & \
+                         (closest_dias_rows['monto_maximo'].isna() | (closest_dias_rows['monto_maximo'] >= monto))
+            closest_monto = closest_dias_rows[mask_monto]
+            
+            if not closest_monto.empty:
+                mejor = closest_monto.sort_values(by='tna', ascending=False).iloc[0].copy()
+            else:
+                mejor = closest_dias_rows.sort_values(by='tna', ascending=False).iloc[0].copy()
+                
             mejor['es_exacto'] = False
             resultados.append(mejor)
             
