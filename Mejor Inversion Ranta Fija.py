@@ -84,7 +84,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         exact_dias = df_banco[(df_banco['dias_minimo'] <= dias) & (df_banco['dias_maximo'] >= dias)]
         
         if not exact_dias.empty:
-            # Entre las filas con días exactos, intentar filtrar por MONTO
             mask_monto = (exact_dias['monto_minimo'].isna() | (exact_dias['monto_minimo'] <= monto)) & \
                          (exact_dias['monto_maximo'].isna() | (exact_dias['monto_maximo'] >= monto))
             exact_monto = exact_dias[mask_monto]
@@ -104,7 +103,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             min_dist = df_banco['distancia_dias'].min()
             closest_dias_rows = df_banco[df_banco['distancia_dias'] == min_dist].copy()
             
-            # Dentro del escalón más cercano en días, intentar filtrar por MONTO
             mask_monto = (closest_dias_rows['monto_minimo'].isna() | (closest_dias_rows['monto_minimo'] <= monto)) & \
                          (closest_dias_rows['monto_maximo'].isna() | (closest_dias_rows['monto_maximo'] >= monto))
             closest_monto = closest_dias_rows[mask_monto]
@@ -150,8 +148,9 @@ def cargar_datos_inversiones():
     tablas_pf = []
     tablas_ap = []
 
+    # Lista estricta de entidades con Ahorro Programado (Mutualista Azuay excluida por ser cuenta de ahorro)
     BANCOS_AP_VALIDOS = [
-        "AUSTRO", "JARDIN AZUAYO", "MACHALA", "MUTUALISTA AZUAY", 
+        "AUSTRO", "JARDIN AZUAYO", "MACHALA", 
         "PRODUBANCO", "29 DE OCTUBRE", "COOPERCO", "JEP", "SOLIDARIO"
     ]
 
@@ -187,20 +186,24 @@ def cargar_datos_inversiones():
 
                 mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
                 mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
-                dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+                dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c or 'dias' in c or 'plazo' in c), None)
                 dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
-                tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+                tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c or 'tasa' in c), None)
 
-                if dmin_col is None and len(df_data.columns) >= 2:
-                    dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
                 if tna_col is None and len(df_data.columns) >= 1:
                     tna_col = df_data.columns[-1]
 
-                if dmin_col and tna_col:
+                if tna_col:
                     mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
                     mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
-                    dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
-                    dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                    
+                    if dmin_col:
+                        dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
+                        dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                    else:
+                        dmin = pd.Series(1, index=df_data.index)
+                        dmax = pd.Series(9999, index=df_data.index)
+
                     tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
 
                     temp_df = pd.DataFrame({
@@ -227,21 +230,24 @@ def cargar_datos_inversiones():
 
                 mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
                 mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
-                dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+                dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c or 'dias' in c or 'plazo' in c), None)
                 dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
-                tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+                tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c or 'tasa' in c), None)
                 bono_col = next((c for c in df_data.columns if 'bonificac' in c or 'premio' in c or 'bono' in c), None)
 
-                if dmin_col is None and len(df_data.columns) >= 2:
-                    dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
                 if tna_col is None and len(df_data.columns) >= 1:
                     tna_col = df_data.columns[-1]
 
-                if dmin_col and tna_col:
+                if tna_col:
                     mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
                     mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
-                    dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
-                    dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                    
+                    if dmin_col:
+                        dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
+                        dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                    else:
+                        dmin = pd.Series(1, index=df_data.index)
+                        dmax = pd.Series(9999, index=df_data.index)
 
                     tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
                     bono_val = limpiar_numeros(df_data[bono_col]).fillna(0.0) if bono_col else pd.Series(0.0, index=df_data.index)
@@ -254,7 +260,6 @@ def cargar_datos_inversiones():
                     elif "SOLIDARIO" in banco_norm: prod_name = "Futuro Seguro"
                     elif "AUSTRO" in banco_norm: prod_name = "Ahorro Programado"
                     elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
-                    elif "MUTUALISTA AZUAY" in banco_norm: prod_name = "Ahorro Programado"
                     elif "29 DE OCTUBRE" in banco_norm: prod_name = "Ahorro Programado"
                     elif "COOPERCO" in banco_norm: prod_name = "Ahorro Programado"
 
@@ -342,9 +347,12 @@ with tab_pf:
                     for idx, row in resultados_pf.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
                         
-                        rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
-                        if row['dias_minimo'] == row['dias_maximo']:
+                        if row['dias_minimo'] == 1 and row['dias_maximo'] == 9999:
+                            rango = "Libre / Sin plazo"
+                        elif row['dias_minimo'] == row['dias_maximo']:
                             rango = f"{int(row['dias_minimo'])} días"
+                        else:
+                            rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
                             
                         if not row['es_exacto']:
                             rango += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
@@ -393,9 +401,12 @@ with tab_ap:
                         prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
                         institucion = f"{banco_fmt}<br>{prod_fmt}"
                         
-                        rango_dias = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
-                        if row['dias_minimo'] == row['dias_maximo']:
+                        if row['dias_minimo'] == 1 and row['dias_maximo'] == 9999:
+                            rango_dias = "Libre / Sin plazo"
+                        elif row['dias_minimo'] == row['dias_maximo']:
                             rango_dias = f"{int(row['dias_minimo'])} días"
+                        else:
+                            rango_dias = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
                             
                         if not row['es_exacto']:
                             rango_dias += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
