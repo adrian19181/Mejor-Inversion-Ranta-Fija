@@ -62,6 +62,47 @@ def es_columna_vacia(col_series):
     s = col_series.fillna('').astype(str).str.strip().str.lower()
     return (s == '').all() or (s == 'nan').all() or (s == 'none').all()
 
+def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
+    """Filtra por monto, busca coincidencia exacta o escalón más cercano por cada banco, y ordena."""
+    # 1. Filtro estricto de Monto (ignora si es NaN)
+    mask_monto = (df['monto_minimo'].isna() | (df['monto_minimo'] <= monto)) & \
+                 (df['monto_maximo'].isna() | (df['monto_maximo'] >= monto))
+    df_monto = df[mask_monto].copy()
+    
+    if df_monto.empty:
+        return pd.DataFrame()
+        
+    resultados = []
+    
+    # 2. Búsqueda inteligente por Banco
+    for banco in df_monto['banco'].unique():
+        df_banco = df_monto[df_monto['banco'] == banco].copy()
+        
+        # Intento A: Coincidencia Exacta de Plazo
+        exact_match = df_banco[(df_banco['dias_minimo'] <= dias) & (df_banco['dias_maximo'] >= dias)]
+        
+        if not exact_match.empty:
+            mejor = exact_match.sort_values(by='tna', ascending=False).iloc[0].copy()
+            mejor['es_exacto'] = True
+            resultados.append(mejor)
+        else:
+            # Intento B: Aproximación al escalón más cercano
+            df_banco['distancia'] = df_banco.apply(
+                lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
+            )
+            mejor = df_banco.sort_values(by=['distancia', 'tna'], ascending=[True, False]).iloc[0].copy()
+            mejor['es_exacto'] = False
+            resultados.append(mejor)
+            
+    # 3. Consolidación y Ranking Global
+    if resultados:
+        res_df = pd.DataFrame(resultados).sort_values(by='tna', ascending=False).reset_index(drop=True)
+        if tipo == 'pf':
+            res_df['ganancia_estimada'] = monto * (res_df['tna'] / 100.0) * (dias / 360.0)
+        return res_df
+        
+    return pd.DataFrame()
+
 @st.cache_data(ttl=3600)
 def cargar_datos_inversiones():
     content = None
@@ -84,6 +125,7 @@ def cargar_datos_inversiones():
         
         banco_norm = str(sheet).upper()
 
+        # Identificar bloques de tablas separados por columnas totalmente vacías
         non_empty_cols = [i for i in range(df_raw.shape[1]) if not es_columna_vacia(df_raw.iloc[:, i])]
         if not non_empty_cols: continue
 
@@ -97,36 +139,44 @@ def cargar_datos_inversiones():
                 curr_block = [col_idx]
         bloques_tablas.append(curr_block)
 
+        # Procesar todos los bloques detectados
         for idx, cols in enumerate(bloques_tablas):
             df_bloque_raw = df_raw.iloc[:, cols].copy()
             
+            # Fila 0 de Pandas (Fila 1 Excel): Titulo General
             titulo_bloque = " ".join(df_bloque_raw.iloc[0].fillna('').astype(str).str.upper().tolist())
             
             is_pf = "PLAZO" in titulo_bloque or "POLIZA" in titulo_bloque or "CERTIFICADO" in titulo_bloque
             is_ap = "AHORRO" in titulo_bloque or "PROGRAMADO" in titulo_bloque or "CHANCHITO" in titulo_bloque or "FLEXI" in titulo_bloque
             
+            # Si el título está vacío o no es claro, fallback por posición
             if not is_pf and not is_ap:
                 if idx == 0: is_pf = True
                 elif idx == 1: is_ap = True
                 else: continue
 
+            # Fila 1 de Pandas (Fila 2 Excel): Nombres de Columnas
             row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
             
+            # Fila 2+ de Pandas (Fila 3+ Excel): Datos
             df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
             df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
+            # Buscar columnas sin asignar valores inventados
             mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
             mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
             dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
             dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
             tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
 
+            # Fallbacks posicionales solo para Dias y Tasa
             if dmin_col is None and len(df_data.columns) >= 2:
                 dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
             if tna_col is None and len(df_data.columns) >= 1:
                 tna_col = df_data.columns[-1]
 
             if dmin_col and tna_col:
+                # Si existe la columna se limpia, si no, se deja estrictamente como NaN
                 mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
                 mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
                 
@@ -175,6 +225,7 @@ def cargar_tasas_referenciales():
     except Exception: pass
     return pd.DataFrame()
 
+
 st.markdown("<h1 style='text-align: center;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
 
 col_btn1, col_btn2 = st.columns([3, 1])
@@ -206,18 +257,11 @@ with tab_pf:
             plazo_dias = int(plazo_input)
 
             if not df_pf.empty:
-                mask_dias = (df_pf['dias_minimo'] <= plazo_dias) & (df_pf['dias_maximo'] >= plazo_dias)
-                mask_monto = (df_pf['monto_minimo'].isna() | (df_pf['monto_minimo'] <= monto)) & \
-                             (df_pf['monto_maximo'].isna() | (df_pf['monto_maximo'] >= monto))
-                
-                filtrado_pf = df_pf[mask_dias & mask_monto].copy()
+                resultados_pf = obtener_ranking_bancos(df_pf, monto, plazo_dias, tipo='pf')
 
-                if filtrado_pf.empty:
+                if resultados_pf.empty:
                     st.error(f"No hay opciones disponibles para un monto de ${monto:,.2f} a {plazo_dias} días.")
                 else:
-                    filtrado_pf['ganancia_estimada'] = monto * (filtrado_pf['tna'] / 100.0) * (plazo_dias / 360.0)
-                    resultados_pf = filtrado_pf.sort_values(by='tna', ascending=False).reset_index(drop=True)
-                    
                     st.markdown("---")
                     st.markdown("<h3 style='text-align: center;'>🏆 Ranking Completo Plazo Fijo</h3>", unsafe_allow_html=True)
                     ganador = resultados_pf.iloc[0]
@@ -226,7 +270,14 @@ with tab_pf:
                     html_rows = ""
                     for idx, row in resultados_pf.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
+                        
                         rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+                        if row['dias_minimo'] == row['dias_maximo']:
+                            rango = f"{int(row['dias_minimo'])} días"
+                            
+                        if not row['es_exacto']:
+                            rango += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
+                            
                         tna = f"{row['tna']:.2f}%"
                         ganancia = f"${row['ganancia_estimada']:,.2f}"
                         html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
@@ -251,17 +302,11 @@ with tab_ap:
                 aporte_ap = float(aporte_ap_input)
                 dias_ap = int(dias_ap_input)
 
-                mask_dias_ap = (df_ap['dias_minimo'] <= dias_ap) & (df_ap['dias_maximo'] >= dias_ap)
-                mask_monto_ap = (df_ap['monto_minimo'].isna() | (df_ap['monto_minimo'] <= aporte_ap)) & \
-                                (df_ap['monto_maximo'].isna() | (df_ap['monto_maximo'] >= aporte_ap))
+                resultados_ap = obtener_ranking_bancos(df_ap, aporte_ap, dias_ap, tipo='ap')
 
-                filtrado_ap = df_ap[mask_dias_ap & mask_monto_ap].copy()
-
-                if filtrado_ap.empty:
+                if resultados_ap.empty:
                     st.error(f"No hay opciones disponibles de Ahorro Programado para ${aporte_ap:,.2f} a {dias_ap} días.")
                 else:
-                    resultados_ap = filtrado_ap.sort_values(by='tna', ascending=False).reset_index(drop=True)
-                    
                     st.markdown("---")
                     st.markdown("<h3 style='text-align: center;'>🏆 Ranking Completo Ahorro Programado</h3>", unsafe_allow_html=True)
                     ganador_ap = resultados_ap.iloc[0]
@@ -274,7 +319,13 @@ with tab_ap:
                         prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
                         institucion = f"{banco_fmt}<br>{prod_fmt}"
                         
-                        rango_dias = f"{int(row['dias_minimo'])} días" if row['dias_minimo'] == row['dias_maximo'] else f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+                        rango_dias = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+                        if row['dias_minimo'] == row['dias_maximo']:
+                            rango_dias = f"{int(row['dias_minimo'])} días"
+                            
+                        if not row['es_exacto']:
+                            rango_dias += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
+                            
                         tna = f"{row['tna']:.2f}%"
                         
                         html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td></tr>"
