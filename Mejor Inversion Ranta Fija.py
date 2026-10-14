@@ -52,6 +52,16 @@ def limpiar_numeros(serie):
     s = s.replace(['nan', 'NAN', 'None', ''], np.nan)
     return pd.to_numeric(s, errors='coerce')
 
+def formatear_nombre_banco(nombre):
+    if pd.isna(nombre) or nombre is None:
+        return ""
+    nombre_str = str(nombre).strip()
+    palabras = nombre_str.split()
+    if len(palabras) > 1:
+        mitad = (len(palabras) + 1) // 2
+        return f"{' '.join(palabras[:mitad])}<br>{' '.join(palabras[mitad:])}"
+    return nombre_str
+
 @st.cache_data(ttl=3600)
 def cargar_datos_inversiones():
     content = None
@@ -69,15 +79,13 @@ def cargar_datos_inversiones():
     for sheet in xl.sheet_names:
         if sheet == "Tasas Referenciales": continue
         
-        # Leer hoja completa
         df_raw = pd.read_excel(xl, sheet_name=sheet, header=None)
         if len(df_raw) < 3: continue
         
-        banco_norm = sheet.upper()
+        banco_norm = str(sheet).upper()
         row0 = df_raw.iloc[0].fillna('').astype(str).str.strip().str.upper()
         row1 = df_raw.iloc[1].fillna('').astype(str).str.strip().str.lower()
         
-        # Mapeo dinámico de bloques de tablas leyendo la Fila 1 (row0)
         bloques = []
         current_title = ""
         start_idx = 0
@@ -100,9 +108,6 @@ def cargar_datos_inversiones():
             
             df_bloque = df_bloque[valid_cols].dropna(how='all')
             
-            # ---------------------------------------------------------
-            # EXTRACCIÓN AHORRO PROGRAMADO (GRUPO 1)
-            # ---------------------------------------------------------
             es_grupo_1 = False
             if "JARDIN AZUAYO" in banco_norm and "CHANCHITO" in titulo_bloque: es_grupo_1 = True
             elif "MACHALA" in banco_norm and "PROGRAMADO" in titulo_bloque: es_grupo_1 = True
@@ -111,10 +116,9 @@ def cargar_datos_inversiones():
             elif "JEP" in banco_norm and "FONDO JEP" in titulo_bloque: es_grupo_1 = True
             
             if es_grupo_1:
-                # Buscar dinámicamente el nombre de las columnas correctas dentro de este bloque
                 dmin_col = next((c for c in df_bloque.columns if 'dias_minimo' in c or 'plazo_minimo' in c), None)
                 dmax_col = next((c for c in df_bloque.columns if 'dias_maximo' in c or 'plazo_maximo' in c), None)
-                tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_efectiva' in c), None)
+                tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_efectiva' in c or 'tasa_anual' in c), None)
                 
                 if dmin_col and tna_col:
                     temp_ap = pd.DataFrame()
@@ -125,7 +129,6 @@ def cargar_datos_inversiones():
                     dmin_vals = limpiar_numeros(df_bloque[dmin_col])
                     dmax_vals = limpiar_numeros(df_bloque[dmax_col]) if dmax_col else dmin_vals
                     
-                    # Eliminado el error del multiplicador "x30", el py2 ya entrega los valores en días
                     temp_ap['dias_minimo'] = dmin_vals.fillna(1).astype(int)
                     temp_ap['dias_maximo'] = dmax_vals.fillna(9999).astype(int)
                     temp_ap['tna'] = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
@@ -134,9 +137,6 @@ def cargar_datos_inversiones():
                     if not temp_ap.empty:
                         tablas_ap.append(temp_ap)
                         
-            # ---------------------------------------------------------
-            # EXTRACCIÓN PLAZO FIJO (Dinámica para prevenir colapsos)
-            # ---------------------------------------------------------
             elif "PLAZO" in titulo_bloque or "INVERSIONES" in titulo_bloque or "POLIZAS" in titulo_bloque:
                 mmin_col = next((c for c in df_bloque.columns if 'monto_minimo' in c), None)
                 mmax_col = next((c for c in df_bloque.columns if 'monto_maximo' in c), None)
@@ -174,13 +174,6 @@ def cargar_tasas_referenciales():
         if "Tasas Referenciales" in xl_doc.sheet_names: return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
     except Exception: pass
     return pd.DataFrame()
-
-def formatear_nombre_banco(nombre):
-    palabras = nombre.strip().split()
-    if len(palabras) > 1:
-        mitad = (len(palabras) + 1) // 2
-        return f"{' '.join(palabras[:mitad])}<br>{' '.join(palabras[mitad:])}"
-    return nombre
 
 st.markdown("<h1 style='text-align: center;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
 
@@ -247,7 +240,6 @@ with tab_ap:
         
         st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
-            # Para el grupo 1, solo pedimos los días según la instrucción
             dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
@@ -255,25 +247,23 @@ with tab_ap:
 
         df_ap_grupo = df_ap[df_ap['tipo_ahorro'] == grupo_seleccionado].copy()
         
-        # Filtro estricto por días
         filtrado_ap = df_ap_grupo[(df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
 
         if filtrado_ap.empty:
             st.error(f"No hay opciones en este grupo para un plazo de {dias_ap} días.")
         else:
-            # Ranking desde el mejor hasta el peor
             resultados_ap = filtrado_ap.sort_values(by='tna', ascending=False).reset_index(drop=True)
             
             st.markdown("---")
             st.markdown("<h3 style='text-align: center;'>🏆 Mejores Opciones Ahorro Programado</h3>", unsafe_allow_html=True)
             ganador_ap = resultados_ap.iloc[0]
             
-            st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({ganador_ap['producto'].title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
+            st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
 
             html_rows_ap = ""
             for idx, row in resultados_ap.iterrows():
                 banco_fmt = formatear_nombre_banco(row['banco'])
-                prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{row['producto'].title()}</span>"
+                prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
                 institucion = f"{banco_fmt}<br>{prod_fmt}"
                 rango_dias = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
                 tna = f"{row['tna']:.2f}%"
