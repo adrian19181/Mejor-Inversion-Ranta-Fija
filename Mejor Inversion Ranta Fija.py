@@ -1,6 +1,8 @@
 import sys
 import io
 import datetime
+import os
+import unicodedata
 import requests
 import pandas as pd
 import numpy as np
@@ -43,8 +45,9 @@ DRIVE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xls
 LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 
 def limpiar_numeros(serie):
-    s = pd.Series(serie).astype(str).str.replace(',', '.', regex=False)
-    s = s.str.replace('%', '', regex=False).str.replace('$', '', regex=False).str.strip()
+    s = pd.Series(serie).astype(str).str.strip()
+    s = s.str.replace(r'[%\$]', '', regex=True)
+    s = s.apply(lambda x: x.replace(',', '') if ',' in x and '.' in x else x.replace(',', '.'))
     s = s.replace(['nan', 'NAN', 'None', ''], np.nan)
     return pd.to_numeric(s, errors='coerce')
 
@@ -60,7 +63,12 @@ def formatear_nombre_banco(nombre):
 
 def es_columna_vacia(col_series):
     s = col_series.fillna('').astype(str).str.strip().str.lower()
-    return (s == '').all() or (s == 'nan').all() or (s == 'none').all()
+    return s.isin(['', 'nan', 'none']).all()
+
+def normalizar_texto(texto):
+    if pd.isna(texto): return ""
+    texto = str(texto).strip().lower()
+    return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
     """Filtra por monto, busca coincidencia exacta o escalón más cercano por cada banco, y ordena."""
@@ -102,17 +110,27 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
 def cargar_datos_inversiones():
     content = None
     try:
-        response = requests.get(DRIVE_URL, timeout=10)
+        response = requests.get(DRIVE_URL, timeout=15)
         if response.status_code == 200: content = io.BytesIO(response.content)
     except Exception: pass
 
-    xl = pd.ExcelFile(content) if content is not None else (pd.ExcelFile(LOCAL_BACKUP_PATH) if pd.io.common.file_exists(LOCAL_BACKUP_PATH) else None)
-    if xl is None: return pd.DataFrame(), pd.DataFrame()
+    xl = None
+    if content is not None:
+        try:
+            xl = pd.ExcelFile(content)
+        except Exception: pass
+
+    if xl is None and os.path.exists(LOCAL_BACKUP_PATH):
+        try:
+            xl = pd.ExcelFile(LOCAL_BACKUP_PATH)
+        except Exception: pass
+
+    if xl is None:
+        return pd.DataFrame(), pd.DataFrame()
 
     tablas_pf = []
     tablas_ap = []
 
-    # Lista explícita y estricta de instituciones cuyo Bloque 2 corresponde a Ahorro Programado
     BANCOS_AP_VALIDOS = [
         "AUSTRO", "JARDIN AZUAYO", "MACHALA", "MUTUALISTA AZUAY", 
         "PRODUBANCO", "29 DE OCTUBRE", "COOPERCO", "JEP", "SOLIDARIO"
@@ -139,11 +157,11 @@ def cargar_datos_inversiones():
                 curr_block = [col_idx]
         bloques_tablas.append(curr_block)
 
-        # BLOQUE 1 (Índice 0): PLAZO FIJO (Aplica para todas las instituciones)
+        # BLOQUE 1: PLAZO FIJO
         if len(bloques_tablas) >= 1:
             cols_pf = bloques_tablas[0]
             df_bloque_raw = df_raw.iloc[:, cols_pf].copy()
-            row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
+            row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
             df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
             df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
@@ -179,11 +197,11 @@ def cargar_datos_inversiones():
                 if not temp_df.empty:
                     tablas_pf.append(temp_df)
 
-        # BLOQUE 2 (Índice 1): AHORRO PROGRAMADO (Filtrado estricto solo para entidades autorizadas)
+        # BLOQUE 2: AHORRO PROGRAMADO
         if len(bloques_tablas) >= 2 and any(b in banco_norm for b in BANCOS_AP_VALIDOS):
             cols_ap = bloques_tablas[1]
             df_bloque_raw = df_raw.iloc[:, cols_ap].copy()
-            row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
+            row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
             df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
             df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
@@ -248,8 +266,9 @@ def cargar_tasas_referenciales():
     except Exception: pass
     xl_source = content if content else LOCAL_BACKUP_PATH
     try:
-        xl_doc = pd.ExcelFile(xl_source)
-        if "Tasas Referenciales" in xl_doc.sheet_names: return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
+        if os.path.exists(xl_source) or isinstance(xl_source, io.BytesIO):
+            xl_doc = pd.ExcelFile(xl_source)
+            if "Tasas Referenciales" in xl_doc.sheet_names: return pd.read_excel(xl_doc, sheet_name="Tasas Referenciales")
     except Exception: pass
     return pd.DataFrame()
 
