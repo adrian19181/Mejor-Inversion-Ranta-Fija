@@ -71,7 +71,7 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    """Evalúa las condiciones por banco de forma aislada. Excluye entradas <= 0 o fuera de límites permisibles."""
+    """Evalúa las condiciones por banco de forma aislada. Excluye entradas <= 0 o que no cumplan el monto y plazo mínimo."""
     if df.empty or monto <= 0 or dias <= 0:
         return pd.DataFrame()
         
@@ -147,6 +147,11 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         df_monto_valido = df_banco[mask_monto].copy()
         
         if df_monto_valido.empty:
+            continue
+        
+        # OBLIGATORIEDAD DE PLAZO MÍNIMO: Si el plazo ingresado es menor al plazo mínimo exigido, se descarta
+        min_dias_banco = df_monto_valido['dias_minimo'].min()
+        if pd.notna(min_dias_banco) and dias < min_dias_banco:
             continue
         
         exact_dias = df_monto_valido[(df_monto_valido['dias_minimo'] <= dias) & (df_monto_valido['dias_maximo'] >= dias)]
