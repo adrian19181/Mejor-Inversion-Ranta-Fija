@@ -71,8 +71,8 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    """Evalúa primero el subconjunto de MONTO válido por banco y luego busca la coincidencia exacta o cercana (hasta 10 días) de DÍAS."""
-    if df.empty:
+    """Evalúa primero el subconjunto de MONTO válido por banco y luego busca la coincidencia exacta o cercana (hasta 10 días) de DÍAS. Excluye búsquedas con valores <= 0."""
+    if df.empty or monto <= 0 or dias <= 0:
         return pd.DataFrame()
         
     resultados = []
@@ -315,13 +315,15 @@ with tab_pf:
     st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Inversión</h3>", unsafe_allow_html=True)
     with st.form(key="formulario_pf"):
         col1, col2 = st.columns(2)
-        with col1: monto_input = st.number_input("Capital a Invertir ($ USD)", min_value=1.0, value=None, step=1.0)
-        with col2: plazo_input = st.number_input("Plazo deseado (Días)", min_value=1, max_value=3600, value=None, step=1)
+        with col1: monto_input = st.number_input("Capital a Invertir ($ USD)", min_value=0.0, value=None, step=1.0)
+        with col2: plazo_input = st.number_input("Plazo deseado (Días)", min_value=0, max_value=3600, value=None, step=1)
         submit_pf = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
     if submit_pf:
         if monto_input is None or plazo_input is None:
             st.warning("Por favor ingresa tanto el monto como el plazo para realizar la consulta.")
+        elif monto_input <= 0 or plazo_input <= 0:
+            st.warning("El capital y el plazo deben ser valores mayores a cero (0).")
         else:
             monto = float(monto_input)
             plazo_dias = int(plazo_input)
@@ -367,13 +369,15 @@ with tab_ap:
         st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
             col1, col2 = st.columns(2)
-            with col1: aporte_ap_input = st.number_input("Aporte Mensual / Apertura ($ USD)", min_value=1.0, value=None, step=1.0)
-            with col2: dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
+            with col1: aporte_ap_input = st.number_input("Aporte Mensual / Apertura ($ USD)", min_value=0.0, value=None, step=1.0)
+            with col2: dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=0, max_value=3600, value=None, step=1)
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
         if submit_ap:
             if aporte_ap_input is None or dias_ap_input is None:
                 st.warning("Por favor ingresa tanto el aporte mensual como el plazo para realizar la consulta.")
+            elif aporte_ap_input <= 0 or dias_ap_input <= 0:
+                st.warning("El aporte mensual y el plazo deben ser valores mayores a cero (0).")
             else:
                 aporte_ap = float(aporte_ap_input)
                 dias_ap = int(dias_ap_input)
