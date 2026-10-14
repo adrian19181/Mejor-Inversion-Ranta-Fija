@@ -84,7 +84,6 @@ def cargar_datos_inversiones():
         
         banco_norm = str(sheet).upper()
 
-        # Identificar bloques de tablas separados por columnas totalmente vacías
         non_empty_cols = [i for i in range(df_raw.shape[1]) if not es_columna_vacia(df_raw.iloc[:, i])]
         if not non_empty_cols: continue
 
@@ -98,44 +97,36 @@ def cargar_datos_inversiones():
                 curr_block = [col_idx]
         bloques_tablas.append(curr_block)
 
-        # Procesar todos los bloques detectados
         for idx, cols in enumerate(bloques_tablas):
             df_bloque_raw = df_raw.iloc[:, cols].copy()
             
-            # Fila 0 de Pandas (Fila 1 Excel): Titulo General
             titulo_bloque = " ".join(df_bloque_raw.iloc[0].fillna('').astype(str).str.upper().tolist())
             
             is_pf = "PLAZO" in titulo_bloque or "POLIZA" in titulo_bloque or "CERTIFICADO" in titulo_bloque
             is_ap = "AHORRO" in titulo_bloque or "PROGRAMADO" in titulo_bloque or "CHANCHITO" in titulo_bloque or "FLEXI" in titulo_bloque
             
-            # Si el título está vacío o no es claro, fallback por posición
             if not is_pf and not is_ap:
                 if idx == 0: is_pf = True
                 elif idx == 1: is_ap = True
                 else: continue
 
-            # Fila 1 de Pandas (Fila 2 Excel): Nombres de Columnas
             row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
             
-            # Fila 2+ de Pandas (Fila 3+ Excel): Datos
             df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
             df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
-            # Buscar columnas sin asignar valores inventados
             mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
             mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
             dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
             dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
             tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
 
-            # Fallbacks posicionales solo para Dias y Tasa
             if dmin_col is None and len(df_data.columns) >= 2:
                 dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
             if tna_col is None and len(df_data.columns) >= 1:
                 tna_col = df_data.columns[-1]
 
             if dmin_col and tna_col:
-                # Si existe la columna se limpia, si no, se deja estrictamente como NaN
                 mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
                 mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
                 
@@ -215,7 +206,6 @@ with tab_pf:
             plazo_dias = int(plazo_input)
 
             if not df_pf.empty:
-                # Filtro Lógico Adaptativo: Ignora el monto si la columna es nula (NaN)
                 mask_dias = (df_pf['dias_minimo'] <= plazo_dias) & (df_pf['dias_maximo'] >= plazo_dias)
                 mask_monto = (df_pf['monto_minimo'].isna() | (df_pf['monto_minimo'] <= monto)) & \
                              (df_pf['monto_maximo'].isna() | (df_pf['monto_maximo'] >= monto))
@@ -226,15 +216,15 @@ with tab_pf:
                     st.error(f"No hay opciones disponibles para un monto de ${monto:,.2f} a {plazo_dias} días.")
                 else:
                     filtrado_pf['ganancia_estimada'] = monto * (filtrado_pf['tna'] / 100.0) * (plazo_dias / 360.0)
-                    top5 = filtrado_pf.sort_values(by='tna', ascending=False).head(5).reset_index(drop=True)
+                    resultados_pf = filtrado_pf.sort_values(by='tna', ascending=False).reset_index(drop=True)
                     
                     st.markdown("---")
-                    st.markdown("<h3 style='text-align: center;'>🏆 Mejor Opción Plazo Fijo</h3>", unsafe_allow_html=True)
-                    ganador = top5.iloc[0]
+                    st.markdown("<h3 style='text-align: center;'>🏆 Ranking Completo Plazo Fijo</h3>", unsafe_allow_html=True)
+                    ganador = resultados_pf.iloc[0]
                     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tna']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
                     html_rows = ""
-                    for idx, row in top5.iterrows():
+                    for idx, row in resultados_pf.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
                         rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
                         tna = f"{row['tna']:.2f}%"
@@ -261,7 +251,6 @@ with tab_ap:
                 aporte_ap = float(aporte_ap_input)
                 dias_ap = int(dias_ap_input)
 
-                # Mismo Filtro Adaptativo sin valores inventados
                 mask_dias_ap = (df_ap['dias_minimo'] <= dias_ap) & (df_ap['dias_maximo'] >= dias_ap)
                 mask_monto_ap = (df_ap['monto_minimo'].isna() | (df_ap['monto_minimo'] <= aporte_ap)) & \
                                 (df_ap['monto_maximo'].isna() | (df_ap['monto_maximo'] >= aporte_ap))
@@ -274,7 +263,7 @@ with tab_ap:
                     resultados_ap = filtrado_ap.sort_values(by='tna', ascending=False).reset_index(drop=True)
                     
                     st.markdown("---")
-                    st.markdown("<h3 style='text-align: center;'>🏆 Mejores Opciones Ahorro Programado</h3>", unsafe_allow_html=True)
+                    st.markdown("<h3 style='text-align: center;'>🏆 Ranking Completo Ahorro Programado</h3>", unsafe_allow_html=True)
                     ganador_ap = resultados_ap.iloc[0]
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
