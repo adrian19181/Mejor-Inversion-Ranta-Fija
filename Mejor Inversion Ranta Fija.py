@@ -64,7 +64,6 @@ def es_columna_vacia(col_series):
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
     """Filtra por monto, busca coincidencia exacta o escalón más cercano por cada banco, y ordena."""
-    # 1. Filtro estricto de Monto (ignora si es NaN)
     mask_monto = (df['monto_minimo'].isna() | (df['monto_minimo'] <= monto)) & \
                  (df['monto_maximo'].isna() | (df['monto_maximo'] >= monto))
     df_monto = df[mask_monto].copy()
@@ -74,11 +73,9 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         
     resultados = []
     
-    # 2. Búsqueda inteligente por Banco
     for banco in df_monto['banco'].unique():
         df_banco = df_monto[df_monto['banco'] == banco].copy()
         
-        # Intento A: Coincidencia Exacta de Plazo
         exact_match = df_banco[(df_banco['dias_minimo'] <= dias) & (df_banco['dias_maximo'] >= dias)]
         
         if not exact_match.empty:
@@ -86,7 +83,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             mejor['es_exacto'] = True
             resultados.append(mejor)
         else:
-            # Intento B: Aproximación al escalón más cercano
             df_banco['distancia'] = df_banco.apply(
                 lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
             )
@@ -94,7 +90,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             mejor['es_exacto'] = False
             resultados.append(mejor)
             
-    # 3. Consolidación y Ranking Global
     if resultados:
         res_df = pd.DataFrame(resultados).sort_values(by='tna', ascending=False).reset_index(drop=True)
         if tipo == 'pf':
@@ -125,7 +120,6 @@ def cargar_datos_inversiones():
         
         banco_norm = str(sheet).upper()
 
-        # Identificar bloques de tablas separados por columnas totalmente vacías
         non_empty_cols = [i for i in range(df_raw.shape[1]) if not es_columna_vacia(df_raw.iloc[:, i])]
         if not non_empty_cols: continue
 
@@ -139,60 +133,90 @@ def cargar_datos_inversiones():
                 curr_block = [col_idx]
         bloques_tablas.append(curr_block)
 
-        # Procesar todos los bloques detectados
-        for idx, cols in enumerate(bloques_tablas):
-            df_bloque_raw = df_raw.iloc[:, cols].copy()
-            
-            # Fila 0 de Pandas (Fila 1 Excel): Titulo General
-            titulo_bloque = " ".join(df_bloque_raw.iloc[0].fillna('').astype(str).str.upper().tolist())
-            
-            is_pf = "PLAZO" in titulo_bloque or "POLIZA" in titulo_bloque or "CERTIFICADO" in titulo_bloque
-            is_ap = "AHORRO" in titulo_bloque or "PROGRAMADO" in titulo_bloque or "CHANCHITO" in titulo_bloque or "FLEXI" in titulo_bloque
-            
-            # Si el título está vacío o no es claro, fallback por posición
-            if not is_pf and not is_ap:
-                if idx == 0: is_pf = True
-                elif idx == 1: is_ap = True
-                else: continue
-
-            # Fila 1 de Pandas (Fila 2 Excel): Nombres de Columnas
+        # BLOQUE 1 (Índice 0): PLAZO FIJO
+        if len(bloques_tablas) >= 1:
+            cols_pf = bloques_tablas[0]
+            df_bloque_raw = df_raw.iloc[:, cols_pf].copy()
             row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
-            
-            # Fila 2+ de Pandas (Fila 3+ Excel): Datos
             df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
             df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
 
-            # Buscar columnas sin asignar valores inventados
             mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
             mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
             dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
             dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
             tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
-            
-            # Detección puntual de columna de bonificación/premio (Caso Banco Solidario)
-            bono_col = next((c for c in df_data.columns if 'bonificac' in c or 'premio' in c or 'bono' in c), None)
 
-            # Fallbacks posicionales solo para Dias y Tasa
             if dmin_col is None and len(df_data.columns) >= 2:
                 dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
             if tna_col is None and len(df_data.columns) >= 1:
                 tna_col = df_data.columns[-1]
 
             if dmin_col and tna_col:
-                # Si existe la columna se limpia, si no, se deja estrictamente como NaN
                 mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
                 mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
-                
                 dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
                 dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
-                
                 tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
-                bono_val = limpiar_numeros(df_data[bono_col]).fillna(0.0) if bono_col else pd.Series(0.0, index=df_data.index)
-                
-                tna_total = tna_base + bono_val
 
                 temp_df = pd.DataFrame({
                     'banco': sheet,
+                    'monto_minimo': mmin,
+                    'monto_maximo': mmax,
+                    'dias_minimo': dmin,
+                    'dias_maximo': dmax,
+                    'tna': tna_base,
+                    'tna_base': tna_base,
+                    'bono': 0.0
+                })
+                temp_df = temp_df[temp_df['tna'] > 0]
+                if not temp_df.empty:
+                    tablas_pf.append(temp_df)
+
+        # BLOQUE 2 (Índice 1): AHORRO PROGRAMADO
+        if len(bloques_tablas) >= 2:
+            cols_ap = bloques_tablas[1]
+            df_bloque_raw = df_raw.iloc[:, cols_ap].copy()
+            row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
+            df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
+            df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
+
+            mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'aporte_min' in c), None)
+            mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'aporte_max' in c), None)
+            dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+            dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
+            tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+            bono_col = next((c for c in df_data.columns if 'bonificac' in c or 'premio' in c or 'bono' in c), None)
+
+            if dmin_col is None and len(df_data.columns) >= 2:
+                dmin_col = df_data.columns[0] if len(df_data.columns) == 3 else (df_data.columns[2] if len(df_data.columns) >= 4 else df_data.columns[0])
+            if tna_col is None and len(df_data.columns) >= 1:
+                tna_col = df_data.columns[-1]
+
+            if dmin_col and tna_col:
+                mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(np.nan, index=df_data.index)
+                mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
+                dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
+                dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+
+                tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
+                bono_val = limpiar_numeros(df_data[bono_col]).fillna(0.0) if bono_col else pd.Series(0.0, index=df_data.index)
+                tna_total = tna_base + bono_val
+
+                prod_name = "Ahorro Programado"
+                if "JARDIN AZUAYO" in banco_norm: prod_name = "Mi Ahorro Chanchito"
+                elif "PRODUBANCO" in banco_norm: prod_name = "Flexi Ahorro"
+                elif "JEP" in banco_norm: prod_name = "Ahorro Fondo JEP"
+                elif "SOLIDARIO" in banco_norm: prod_name = "Futuro Seguro"
+                elif "AUSTRO" in banco_norm: prod_name = "Ahorro Programado"
+                elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
+                elif "MUTUALISTA AZUAY" in banco_norm: prod_name = "Ahorro Programado"
+                elif "29 DE OCTUBRE" in banco_norm: prod_name = "Ahorro Programado"
+                elif "COOPERCO" in banco_norm: prod_name = "Ahorro Programado"
+
+                temp_df = pd.DataFrame({
+                    'banco': sheet,
+                    'producto': prod_name,
                     'monto_minimo': mmin,
                     'monto_maximo': mmax,
                     'dias_minimo': dmin,
@@ -201,20 +225,8 @@ def cargar_datos_inversiones():
                     'tna_base': tna_base,
                     'bono': bono_val
                 })
-                
                 temp_df = temp_df[temp_df['tna'] > 0]
-                if temp_df.empty: continue
-
-                if is_pf:
-                    tablas_pf.append(temp_df)
-                elif is_ap:
-                    prod_name = "Ahorro Programado"
-                    if "JARDIN AZUAYO" in banco_norm: prod_name = "Mi Ahorro Chanchito"
-                    elif "PRODUBANCO" in banco_norm: prod_name = "Flexi Ahorro"
-                    elif "JEP" in banco_norm: prod_name = "Ahorro Fondo JEP"
-                    elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
-                    elif "SOLIDARIO" in banco_norm: prod_name = "Futuro Seguro"
-                    temp_df['producto'] = prod_name
+                if not temp_df.empty:
                     tablas_ap.append(temp_df)
 
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
