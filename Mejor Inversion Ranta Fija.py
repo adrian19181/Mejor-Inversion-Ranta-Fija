@@ -108,18 +108,22 @@ def cargar_datos_inversiones():
 
         if cols_ap:
             try:
-                df_temp = df_raw.iloc[2:, cols_ap].copy()
+                df_temp = df_raw.iloc[2:, cols_ap].copy().reset_index(drop=True)
                 df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
                 df_temp = df_temp.dropna(how='all')
                 
-                temp_ap = pd.DataFrame()
-                temp_ap['banco'] = sheet
-                temp_ap['producto'] = prod_name
-                temp_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                dmin = limpiar_numeros(df_temp['dias_minimo']).fillna(1).astype(int)
+                dmax = limpiar_numeros(df_temp['dias_maximo']).fillna(9999).astype(int)
+                tna = limpiar_numeros(df_temp['tna']).fillna(0.0)
                 
-                temp_ap['dias_minimo'] = limpiar_numeros(df_temp['dias_minimo']).fillna(1).astype(int)
-                temp_ap['dias_maximo'] = limpiar_numeros(df_temp['dias_maximo']).fillna(9999).astype(int)
-                temp_ap['tna'] = limpiar_numeros(df_temp['tna']).fillna(0.0)
+                temp_ap = pd.DataFrame({
+                    'banco': sheet,
+                    'producto': prod_name,
+                    'tipo_ahorro': "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)",
+                    'dias_minimo': dmin,
+                    'dias_maximo': dmax,
+                    'tna': tna
+                })
                 
                 temp_ap = temp_ap[temp_ap['tna'] > 0]
                 if not temp_ap.empty:
@@ -147,7 +151,7 @@ def cargar_datos_inversiones():
             
         for titulo_bloque, start, end in bloques:
             headers_bloque = row1[start:end].tolist()
-            df_bloque = df_raw.iloc[2:, start:end].copy()
+            df_bloque = df_raw.iloc[2:, start:end].copy().reset_index(drop=True)
             df_bloque.columns = headers_bloque
             
             valid_cols = [c for c in headers_bloque if c != '' and c != 'nan' and not c.startswith('unnamed')]
@@ -163,13 +167,20 @@ def cargar_datos_inversiones():
                 tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_pago_vencimiento' in c), None)
                 
                 if dmin_col and tna_col:
-                    temp_pf = pd.DataFrame()
-                    temp_pf['banco'] = sheet
-                    temp_pf['monto_minimo'] = limpiar_numeros(df_bloque[mmin_col]).fillna(0.0) if mmin_col else 0.0
-                    temp_pf['monto_maximo'] = limpiar_numeros(df_bloque[mmax_col]).fillna(99999999.0) if mmax_col else 99999999.0
-                    temp_pf['dias_minimo'] = limpiar_numeros(df_bloque[dmin_col]).fillna(1).astype(int)
-                    temp_pf['dias_maximo'] = limpiar_numeros(df_bloque[dmax_col]).fillna(9999).astype(int)
-                    temp_pf['tasa_nominal_porcentaje'] = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
+                    mmin = limpiar_numeros(df_bloque[mmin_col]).fillna(0.0) if mmin_col else 0.0
+                    mmax = limpiar_numeros(df_bloque[mmax_col]).fillna(99999999.0) if mmax_col else 99999999.0
+                    dmin = limpiar_numeros(df_bloque[dmin_col]).fillna(1).astype(int)
+                    dmax = limpiar_numeros(df_bloque[dmax_col]).fillna(9999).astype(int)
+                    tna = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
+                    
+                    temp_pf = pd.DataFrame({
+                        'banco': sheet,
+                        'monto_minimo': mmin,
+                        'monto_maximo': mmax,
+                        'dias_minimo': dmin,
+                        'dias_maximo': dmax,
+                        'tasa_nominal_porcentaje': tna
+                    })
                     
                     temp_pf = temp_pf[temp_pf['tasa_nominal_porcentaje'] > 0]
                     if not temp_pf.empty:
@@ -269,19 +280,15 @@ with tab_ap:
         else:
             resultados_finales = []
             
-            # Recorrer cada banco para extraer su mejor opción basada en los días ingresados
             for banco in df_ap_grupo['banco'].unique():
                 df_banco = df_ap_grupo[df_ap_grupo['banco'] == banco].copy()
                 
-                # 1. Intentar encontrar una coincidencia exacta dentro del rango
                 exact_match = df_banco[(df_banco['dias_minimo'] <= dias_ap) & (df_banco['dias_maximo'] >= dias_ap)]
                 
                 if not exact_match.empty:
-                    # Si coincide, tomamos la de mayor tasa
                     mejor_opcion = exact_match.sort_values(by='tna', ascending=False).iloc[0]
                     resultados_finales.append(mejor_opcion)
                 else:
-                    # 2. Si no hay coincidencia exacta (ej. plazos fijos de Machala o JEP), buscar el más cercano
                     df_banco['distancia'] = df_banco.apply(
                         lambda row: min(abs(dias_ap - row['dias_minimo']), abs(dias_ap - row['dias_maximo'])), axis=1
                     )
@@ -289,7 +296,6 @@ with tab_ap:
                     resultados_finales.append(mejor_opcion)
 
             if resultados_finales:
-                # Armar el ranking final ordenando de mayor a menor tasa
                 resultados_ap = pd.DataFrame(resultados_finales).sort_values(by='tna', ascending=False).reset_index(drop=True)
                 
                 st.markdown("---")
