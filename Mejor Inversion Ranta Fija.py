@@ -5,7 +5,6 @@ import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
-import streamlit.components.v1 as components
 
 if __name__ == "__main__" and not st.runtime.exists():
     from streamlit.web import cli as stcli
@@ -53,11 +52,6 @@ def limpiar_numeros(serie):
     s = s.replace(['nan', 'NAN', 'None', ''], np.nan)
     return pd.to_numeric(s, errors='coerce')
 
-def safe_get(df, cols, default_val):
-    for c in cols:
-        if c in df.columns: return df[c]
-    return pd.Series([default_val]*len(df))
-
 @st.cache_data(ttl=3600)
 def cargar_datos_inversiones():
     content = None
@@ -74,138 +68,94 @@ def cargar_datos_inversiones():
 
     for sheet in xl.sheet_names:
         if sheet == "Tasas Referenciales": continue
+        
+        # Leer hoja completa
         df_raw = pd.read_excel(xl, sheet_name=sheet, header=None)
         if len(df_raw) < 3: continue
         
-        banco_norm = sheet.upper().replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+        banco_norm = sheet.upper()
         row0 = df_raw.iloc[0].fillna('').astype(str).str.strip().str.upper()
-        row1 = df_raw.iloc[1].fillna('').astype(str).str.strip()
-        inicios = [(i, val) for i, val in enumerate(row0) if val != '' and val != 'NAN' and not val.startswith('UNNAMED')]
+        row1 = df_raw.iloc[1].fillna('').astype(str).str.strip().str.lower()
         
-        for idx in range(len(inicios)):
-            start_col, title = inicios[idx]
-            end_col = inicios[idx+1][0] if idx + 1 < len(inicios) else len(row1)
+        # Mapeo dinámico de bloques de tablas leyendo la Fila 1 (row0)
+        bloques = []
+        current_title = ""
+        start_idx = 0
+        for i, val in enumerate(row0):
+            if val != '' and val != 'NAN' and not val.startswith('UNNAMED'):
+                if current_title:
+                    bloques.append((current_title, start_idx, i))
+                current_title = val
+                start_idx = i
+        if current_title:
+            bloques.append((current_title, start_idx, len(row0)))
             
-            headers = row1[start_col:end_col].tolist()
-            valid_cols_idx = [j for j, h in enumerate(headers) if h != '' and h.upper() != 'NAN']
+        for titulo_bloque, start, end in bloques:
+            headers_bloque = row1[start:end].tolist()
+            df_bloque = df_raw.iloc[2:, start:end].copy()
+            df_bloque.columns = headers_bloque
             
-            es_ap = False
-            kw_ap = ["PROGRAMADO", "CHANCHITO", "FONDO AHORRO", "AHORRO FONDO", "FUTURO SEGURO", "FLEXI"]
-            if any(kw in title for kw in kw_ap) or ("AHORRO" in title and "VISTA" not in title and "CUENTA" not in title and "PLUS" not in title):
-                es_ap = True
+            valid_cols = [c for c in headers_bloque if c != '' and c != 'nan' and not c.startswith('unnamed')]
+            if not valid_cols: continue
+            
+            df_bloque = df_bloque[valid_cols].dropna(how='all')
+            
+            # ---------------------------------------------------------
+            # EXTRACCIÓN AHORRO PROGRAMADO (GRUPO 1)
+            # ---------------------------------------------------------
+            es_grupo_1 = False
+            if "JARDIN AZUAYO" in banco_norm and "CHANCHITO" in titulo_bloque: es_grupo_1 = True
+            elif "MACHALA" in banco_norm and "PROGRAMADO" in titulo_bloque: es_grupo_1 = True
+            elif "29 DE OCTUBRE" in banco_norm and "PROGRAMADO" in titulo_bloque: es_grupo_1 = True
+            elif "PRODUBANCO" in banco_norm and "FLEXI" in titulo_bloque: es_grupo_1 = True
+            elif "JEP" in banco_norm and "FONDO JEP" in titulo_bloque: es_grupo_1 = True
+            
+            if es_grupo_1:
+                # Buscar dinámicamente el nombre de las columnas correctas dentro de este bloque
+                dmin_col = next((c for c in df_bloque.columns if 'dias_minimo' in c or 'plazo_minimo' in c), None)
+                dmax_col = next((c for c in df_bloque.columns if 'dias_maximo' in c or 'plazo_maximo' in c), None)
+                tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_efectiva' in c), None)
                 
-            if es_ap:
-                cols_idx = []
-                grupo_nombre = None
+                if dmin_col and tna_col:
+                    temp_ap = pd.DataFrame()
+                    temp_ap['banco'] = sheet
+                    temp_ap['producto'] = titulo_bloque
+                    temp_ap['tipo_ahorro'] = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
+                    
+                    dmin_vals = limpiar_numeros(df_bloque[dmin_col])
+                    dmax_vals = limpiar_numeros(df_bloque[dmax_col]) if dmax_col else dmin_vals
+                    
+                    # Eliminado el error del multiplicador "x30", el py2 ya entrega los valores en días
+                    temp_ap['dias_minimo'] = dmin_vals.fillna(1).astype(int)
+                    temp_ap['dias_maximo'] = dmax_vals.fillna(9999).astype(int)
+                    temp_ap['tna'] = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
+                    
+                    temp_ap = temp_ap[temp_ap['tna'] > 0]
+                    if not temp_ap.empty:
+                        tablas_ap.append(temp_ap)
+                        
+            # ---------------------------------------------------------
+            # EXTRACCIÓN PLAZO FIJO (Dinámica para prevenir colapsos)
+            # ---------------------------------------------------------
+            elif "PLAZO" in titulo_bloque or "INVERSIONES" in titulo_bloque or "POLIZAS" in titulo_bloque:
+                mmin_col = next((c for c in df_bloque.columns if 'monto_minimo' in c), None)
+                mmax_col = next((c for c in df_bloque.columns if 'monto_maximo' in c), None)
+                dmin_col = next((c for c in df_bloque.columns if 'dias_minimo' in c), None)
+                dmax_col = next((c for c in df_bloque.columns if 'dias_maximo' in c), None)
+                tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_pago_vencimiento' in c), None)
                 
-                # Asignación estricta a grupos para evitar que bancos no deseados entren al Grupo 1
-                if "JARDIN AZUAYO" in banco_norm and "CHANCHITO" in title:
-                    cols_idx = [5, 6, 7] # F, G, H
-                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                elif "MACHALA" in banco_norm and "PROGRAMADO" in title:
-                    cols_idx = [7, 8, 9] # H, I, J
-                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                elif "29 DE OCTUBRE" in banco_norm and "PROGRAMADO" in title:
-                    cols_idx = [8, 9, 10] # I, J, K
-                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                elif "PRODUBANCO" in banco_norm and "FLEXI" in title:
-                    cols_idx = [7, 8, 9] # H, I, J
-                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                elif "JEP" in banco_norm and "FONDO JEP" in title:
-                    cols_idx = [7, 8, 9] # H, I, J
-                    grupo_nombre = "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"
-                elif "AUSTRO" in banco_norm:
-                    grupo_nombre = "🔵 Grupo 2: Banco del Austro"
-                elif "COOPERCO" in banco_norm:
-                    grupo_nombre = "🟡 Grupo 3: Cooperco"
-                elif "SOLIDARIO" in banco_norm:
-                    grupo_nombre = "🟣 Grupo 4: Banco Solidario"
-
-                if grupo_nombre is None:
-                    continue # Excluir estrictamente cualquier otro banco/producto no mapeado
+                if dmin_col and tna_col:
+                    temp_pf = pd.DataFrame()
+                    temp_pf['banco'] = sheet
+                    temp_pf['monto_minimo'] = limpiar_numeros(df_bloque[mmin_col]).fillna(0.0) if mmin_col else 0.0
+                    temp_pf['monto_maximo'] = limpiar_numeros(df_bloque[mmax_col]).fillna(99999999.0) if mmax_col else 99999999.0
+                    temp_pf['dias_minimo'] = limpiar_numeros(df_bloque[dmin_col]).fillna(1).astype(int)
+                    temp_pf['dias_maximo'] = limpiar_numeros(df_bloque[dmax_col]).fillna(9999).astype(int)
+                    temp_pf['tasa_nominal_porcentaje'] = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
                     
-                if cols_idx:
-                    max_col_needed = max(cols_idx)
-                    if df_raw.shape[1] <= max_col_needed:
-                        df_raw = df_raw.reindex(columns=range(max_col_needed + 1))
-                        
-                    df_temp = df_raw.iloc[2:, cols_idx].copy()
-                    df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
-                    df_temp = df_temp.dropna(how='all')
-                    
-                    df_ap = pd.DataFrame()
-                    df_ap['banco'] = [sheet] * len(df_temp)
-                    df_ap['producto'] = [title] * len(df_temp)
-                    df_ap['tipo_ahorro'] = grupo_nombre
-                    df_ap['monto_minimo'] = 0.0
-                    df_ap['monto_maximo'] = 99999999.0
-                    
-                    p_max = limpiar_numeros(df_temp['dias_maximo']).fillna(9999).astype(int)
-                    p_min_raw = limpiar_numeros(df_temp['dias_minimo'])
-                    if p_min_raw.isna().all():
-                        p_min_list = [1]
-                        for i in range(len(p_max)-1):
-                            p_min_list.append(p_max.iloc[i] + 1)
-                        p_min = pd.Series(p_min_list, index=p_max.index).astype(int)
-                    else:
-                        p_min = p_min_raw.fillna(1).astype(int)
-                    
-                    if p_max.max() <= 120:
-                        p_min = p_min * 30
-                        p_max = p_max * 30
-                        
-                    df_ap['dias_minimo'] = p_min
-                    df_ap['dias_maximo'] = p_max
-                    df_ap['tna'] = limpiar_numeros(df_temp['tna']).fillna(0.0)
-                    
-                    df_ap = df_ap[df_ap['tna'] > 0]
-                    if not df_ap.empty: tablas_ap.append(df_ap)
-                else:
-                    if not valid_cols_idx: continue
-                    df_t = df_raw.iloc[2:, start_col:end_col].copy()
-                    df_t.columns = headers
-                    df_t = df_t.iloc[:, valid_cols_idx]
-                    df_t = df_t.dropna(how='all')
-                    for c in df_t.columns: df_t[c] = limpiar_numeros(df_t[c])
-                        
-                    df_ap = pd.DataFrame()
-                    df_ap['banco'] = [sheet] * len(df_t)
-                    df_ap['producto'] = [title] * len(df_t)
-                    df_ap['tipo_ahorro'] = grupo_nombre
-                    
-                    df_ap['monto_minimo'] = limpiar_numeros(safe_get(df_t, ['monto_minimo', 'cuota_minima'], 0.0)).fillna(0.0)
-                    df_ap['monto_maximo'] = limpiar_numeros(safe_get(df_t, ['monto_maximo', 'cuota_maxima'], 99999999.0)).fillna(99999999.0)
-                    dmin = limpiar_numeros(safe_get(df_t, ['dias_minimo', 'plazo_minimo_dias'], 1)).fillna(1).astype(int)
-                    dmax = limpiar_numeros(safe_get(df_t, ['dias_maximo', 'plazo_maximo_dias'], 9999)).fillna(9999).astype(int)
-                    
-                    if dmax.max() <= 120:
-                        dmin = dmin * 30
-                        dmax = dmax * 30
-                        
-                    df_ap['dias_minimo'] = dmin
-                    df_ap['dias_maximo'] = dmax
-                    df_ap['tna'] = limpiar_numeros(safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_anual_porcentaje'], 0.0)).fillna(0.0)
-                    
-                    df_ap = df_ap[df_ap['tna'] > 0]
-                    if not df_ap.empty: tablas_ap.append(df_ap)
-                        
-            elif idx == 0:
-                if not valid_cols_idx: continue
-                df_t = df_raw.iloc[2:, start_col:end_col].copy()
-                df_t.columns = headers
-                df_t = df_t.iloc[:, valid_cols_idx]
-                df_t = df_t.dropna(how='all')
-
-                df_pf = pd.DataFrame()
-                df_pf['banco'] = [sheet] * len(df_t)
-                df_pf['monto_minimo'] = limpiar_numeros(safe_get(df_t, ['monto_minimo'], 0.0)).fillna(0.0)
-                df_pf['monto_maximo'] = limpiar_numeros(safe_get(df_t, ['monto_maximo'], 99999999.0)).fillna(99999999.0)
-                df_pf['dias_minimo'] = limpiar_numeros(safe_get(df_t, ['dias_minimo'], 1)).fillna(1).astype(int)
-                df_pf['dias_maximo'] = limpiar_numeros(safe_get(df_t, ['dias_maximo'], 9999)).fillna(9999).astype(int)
-                df_pf['tasa_nominal_porcentaje'] = limpiar_numeros(safe_get(df_t, ['tasa_nominal_porcentaje', 'tasa_pago_vencimiento_porcentaje'], 0.0)).fillna(0.0)
-                
-                df_pf = df_pf[df_pf['tasa_nominal_porcentaje'] > 0]
-                if not df_pf.empty: tablas_pf.append(df_pf)
+                    temp_pf = temp_pf[temp_pf['tasa_nominal_porcentaje'] > 0]
+                    if not temp_pf.empty:
+                        tablas_pf.append(temp_pf)
 
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
     df_final_ap = pd.concat(tablas_ap, ignore_index=True) if tablas_ap else pd.DataFrame()
@@ -241,7 +191,7 @@ with col_btn2:
         st.rerun()
 
 df_pf, df_ap = cargar_datos_inversiones()
-if df_pf.empty:
+if df_pf.empty and df_ap.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
     st.stop()
 
@@ -258,29 +208,30 @@ with tab_pf:
     monto = monto_input if monto_input is not None else 5000.0
     plazo_dias = plazo_input if plazo_input is not None else 180
 
-    filtrado_pf = df_pf[(df_pf['monto_minimo'] <= monto) & (df_pf['monto_maximo'] >= monto) & 
-                        (df_pf['dias_minimo'] <= plazo_dias) & (df_pf['dias_maximo'] >= plazo_dias)].copy()
+    if not df_pf.empty:
+        filtrado_pf = df_pf[(df_pf['monto_minimo'] <= monto) & (df_pf['monto_maximo'] >= monto) & 
+                            (df_pf['dias_minimo'] <= plazo_dias) & (df_pf['dias_maximo'] >= plazo_dias)].copy()
 
-    if filtrado_pf.empty:
-        st.error(f"No hay opciones disponibles para un monto de ${monto:,.2f} a {plazo_dias} días.")
-    else:
-        filtrado_pf['ganancia_estimada'] = monto * (filtrado_pf['tasa_nominal_porcentaje'] / 100.0) * (plazo_dias / 360.0)
-        top5 = filtrado_pf.sort_values(by='tasa_nominal_porcentaje', ascending=False).head(5).reset_index(drop=True)
-        
-        st.markdown("---")
-        st.markdown("<h3 style='text-align: center;'>🏆 Mejor Opción Plazo Fijo</h3>", unsafe_allow_html=True)
-        ganador = top5.iloc[0]
-        st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
+        if filtrado_pf.empty:
+            st.error(f"No hay opciones disponibles para un monto de ${monto:,.2f} a {plazo_dias} días.")
+        else:
+            filtrado_pf['ganancia_estimada'] = monto * (filtrado_pf['tasa_nominal_porcentaje'] / 100.0) * (plazo_dias / 360.0)
+            top5 = filtrado_pf.sort_values(by='tasa_nominal_porcentaje', ascending=False).head(5).reset_index(drop=True)
+            
+            st.markdown("---")
+            st.markdown("<h3 style='text-align: center;'>🏆 Mejor Opción Plazo Fijo</h3>", unsafe_allow_html=True)
+            ganador = top5.iloc[0]
+            st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tasa_nominal_porcentaje']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-        html_rows = ""
-        for idx, row in top5.iterrows():
-            banco_fmt = formatear_nombre_banco(row['banco'])
-            rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
-            tna = f"{row['tasa_nominal_porcentaje']:.2f}%"
-            ganancia = f"${row['ganancia_estimada']:,.2f}"
-            html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+            html_rows = ""
+            for idx, row in top5.iterrows():
+                banco_fmt = formatear_nombre_banco(row['banco'])
+                rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+                tna = f"{row['tasa_nominal_porcentaje']:.2f}%"
+                ganancia = f"${row['ganancia_estimada']:,.2f}"
+                html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
-        st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
 
 with tab_ap:
     if df_ap.empty:
@@ -290,46 +241,27 @@ with tab_ap:
         
         grupo_seleccionado = st.radio(
             "Filtrar por Instituciones con estructura similar:",
-            [
-                "🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)",
-                "🔵 Grupo 2: Banco del Austro",
-                "🟡 Grupo 3: Cooperco",
-                "🟣 Grupo 4: Banco Solidario"
-            ],
+            ["🟢 Grupo 1: Tradicionales (Jardín Azuayo, Machala, 29 Oct, Produbanco, JEP)"],
             label_visibility="collapsed"
         )
         
-        es_grupo_1 = "Grupo 1" in grupo_seleccionado
-        
         st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Ahorro</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ap"):
-            if es_grupo_1:
-                dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
-                cuota_input = 0.0
-            else:
-                col1, col2 = st.columns(2)
-                with col1: cuota_input = st.number_input("Ahorro Mensual ($ USD)", min_value=1.0, value=None, step=1.0)
-                with col2: dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
-                
+            # Para el grupo 1, solo pedimos los días según la instrucción
+            dias_ap_input = st.number_input("Plazo a cumplir (Días)", min_value=1, max_value=3600, value=None, step=1)
             submit_ap = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
-        cuota = cuota_input if cuota_input is not None else 100.0
         dias_ap = dias_ap_input if dias_ap_input is not None else 360
 
         df_ap_grupo = df_ap[df_ap['tipo_ahorro'] == grupo_seleccionado].copy()
-
-        if es_grupo_1:
-            filtrado_ap = df_ap_grupo[(df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
-        else:
-            filtrado_ap = df_ap_grupo[(df_ap_grupo['monto_minimo'] <= cuota) & (df_ap_grupo['monto_maximo'] >= cuota) & 
-                                      (df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
+        
+        # Filtro estricto por días
+        filtrado_ap = df_ap_grupo[(df_ap_grupo['dias_minimo'] <= dias_ap) & (df_ap_grupo['dias_maximo'] >= dias_ap)].copy()
 
         if filtrado_ap.empty:
-            if es_grupo_1:
-                st.error(f"No hay opciones en este grupo para un plazo de {dias_ap} días.")
-            else:
-                st.error(f"No hay opciones en este grupo para una cuota de ${cuota:,.2f} a {dias_ap} días.")
+            st.error(f"No hay opciones en este grupo para un plazo de {dias_ap} días.")
         else:
+            # Ranking desde el mejor hasta el peor
             resultados_ap = filtrado_ap.sort_values(by='tna', ascending=False).reset_index(drop=True)
             
             st.markdown("---")
