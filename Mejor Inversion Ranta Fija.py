@@ -62,6 +62,10 @@ def formatear_nombre_banco(nombre):
         return f"{' '.join(palabras[:mitad])}<br>{' '.join(palabras[mitad:])}"
     return nombre_str
 
+def es_columna_vacia(col_series):
+    s = col_series.fillna('').astype(str).str.strip().str.lower()
+    return (s == '').all() or (s == 'nan').all() or (s == 'none').all()
+
 @st.cache_data(ttl=3600)
 def cargar_datos_inversiones():
     content = None
@@ -84,38 +88,89 @@ def cargar_datos_inversiones():
         
         banco_norm = str(sheet).upper()
 
-        # =========================================================
-        # EXTRACCIÓN AHORRO PROGRAMADO (GRUPO 1) - MAPEO ESTRICTO
-        # =========================================================
-        cols_ap = None
-        prod_name = "Ahorro Programado"
-        
-        if "JARDIN AZUAYO" in banco_norm:
-            cols_ap = [5, 6, 7] # Columnas F, G, H
-            prod_name = "Mi Ahorro Chanchito"
-        elif "MACHALA" in banco_norm:
-            cols_ap = [7, 8, 9] # Columnas H, I, J
-            prod_name = "Ahorro Programado"
-        elif "29 DE OCTUBRE" in banco_norm:
-            cols_ap = [8, 9, 10] # Columnas I, J, K
-            prod_name = "Ahorro Programado"
-        elif "PRODUBANCO" in banco_norm:
-            cols_ap = [7, 8, 9] # Columnas H, I, J
-            prod_name = "Flexi Ahorro"
-        elif "JEP" in banco_norm:
-            cols_ap = [7, 8, 9] # Columnas H, I, J
-            prod_name = "Ahorro Fondo JEP"
+        # Identificar bloques de tablas separados por columnas totalmente vacías
+        non_empty_cols = [i for i in range(df_raw.shape[1]) if not es_columna_vacia(df_raw.iloc[:, i])]
+        if not non_empty_cols: continue
 
-        if cols_ap:
-            try:
-                df_temp = df_raw.iloc[2:, cols_ap].copy().reset_index(drop=True)
-                df_temp.columns = ['dias_minimo', 'dias_maximo', 'tna']
-                df_temp = df_temp.dropna(how='all')
-                
-                dmin = limpiar_numeros(df_temp['dias_minimo']).fillna(1).astype(int)
-                dmax = limpiar_numeros(df_temp['dias_maximo']).fillna(9999).astype(int)
-                tna = limpiar_numeros(df_temp['tna']).fillna(0.0)
-                
+        bloques_tablas = []
+        curr_block = [non_empty_cols[0]]
+        for col_idx in non_empty_cols[1:]:
+            if col_idx == curr_block[-1] + 1:
+                curr_block.append(col_idx)
+            else:
+                bloques_tablas.append(curr_block)
+                curr_block = [col_idx]
+        bloques_tablas.append(curr_block)
+
+        # =========================================================
+        # TABLA 1: PLAZO FIJO (PRIMER BLOQUE DE COLUMNAS)
+        # =========================================================
+        if len(bloques_tablas) >= 1:
+            cols_pf = bloques_tablas[0]
+            df_pf_raw = df_raw.iloc[:, cols_pf].copy()
+            row1_pf = df_pf_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
+            df_pf_data = df_pf_raw.iloc[2:].copy().reset_index(drop=True)
+            df_pf_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_pf)]
+
+            mmin_col = next((c for c in df_pf_data.columns if 'monto_min' in c), None)
+            mmax_col = next((c for c in df_pf_data.columns if 'monto_max' in c), None)
+            dmin_col = next((c for c in df_pf_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+            dmax_col = next((c for c in df_pf_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
+            tna_col = next((c for c in df_pf_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+
+            if dmin_col is None and len(df_pf_data.columns) >= 2:
+                dmin_col = df_pf_data.columns[0] if len(df_pf_data.columns) == 3 else (df_pf_data.columns[2] if len(df_pf_data.columns) >= 4 else df_pf_data.columns[0])
+            if tna_col is None and len(df_pf_data.columns) >= 1:
+                tna_col = df_pf_data.columns[-1]
+
+            if dmin_col and tna_col:
+                mmin = limpiar_numeros(df_pf_data[mmin_col]).fillna(0.0) if mmin_col else 0.0
+                mmax = limpiar_numeros(df_pf_data[mmax_col]).fillna(99999999.0) if mmax_col else 99999999.0
+                dmin = limpiar_numeros(df_pf_data[dmin_col]).fillna(1).astype(int)
+                dmax = limpiar_numeros(df_pf_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                tna = limpiar_numeros(df_pf_data[tna_col]).fillna(0.0)
+
+                temp_pf = pd.DataFrame({
+                    'banco': sheet,
+                    'monto_minimo': mmin,
+                    'monto_maximo': mmax,
+                    'dias_minimo': dmin,
+                    'dias_maximo': dmax,
+                    'tasa_nominal_porcentaje': tna
+                })
+                temp_pf = temp_pf[temp_pf['tasa_nominal_porcentaje'] > 0]
+                if not temp_pf.empty:
+                    tablas_pf.append(temp_pf)
+
+        # =========================================================
+        # TABLA 2: AHORRO PROGRAMADO (SEGUNDO BLOQUE DE COLUMNAS)
+        # =========================================================
+        if len(bloques_tablas) >= 2:
+            cols_ap = bloques_tablas[1]
+            df_ap_raw = df_raw.iloc[:, cols_ap].copy()
+            row1_ap = df_ap_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
+            df_ap_data = df_ap_raw.iloc[2:].copy().reset_index(drop=True)
+            df_ap_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_ap)]
+
+            dmin_col = next((c for c in df_ap_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
+            dmax_col = next((c for c in df_ap_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
+            tna_col = next((c for c in df_ap_data.columns if 'tna' in c or 'tasa' in c or 'tasa_nominal' in c), None)
+
+            if dmin_col is None and len(df_ap_data.columns) >= 1: dmin_col = df_ap_data.columns[0]
+            if dmax_col is None and len(df_ap_data.columns) >= 2: dmax_col = df_ap_data.columns[1]
+            if tna_col is None and len(df_ap_data.columns) >= 1: tna_col = df_ap_data.columns[-1]
+
+            if dmin_col and tna_col:
+                dmin = limpiar_numeros(df_ap_data[dmin_col]).fillna(1).astype(int)
+                dmax = limpiar_numeros(df_ap_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                tna = limpiar_numeros(df_ap_data[tna_col]).fillna(0.0)
+
+                prod_name = "Ahorro Programado"
+                if "JARDIN AZUAYO" in banco_norm: prod_name = "Mi Ahorro Chanchito"
+                elif "PRODUBANCO" in banco_norm: prod_name = "Flexi Ahorro"
+                elif "JEP" in banco_norm: prod_name = "Ahorro Fondo JEP"
+                elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
+
                 temp_ap = pd.DataFrame({
                     'banco': sheet,
                     'producto': prod_name,
@@ -124,67 +179,9 @@ def cargar_datos_inversiones():
                     'dias_maximo': dmax,
                     'tna': tna
                 })
-                
                 temp_ap = temp_ap[temp_ap['tna'] > 0]
                 if not temp_ap.empty:
                     tablas_ap.append(temp_ap)
-            except Exception:
-                pass
-
-        # =========================================================
-        # EXTRACCIÓN PLAZO FIJO Y OTROS (DINÁMICO POR BLOQUES)
-        # =========================================================
-        row0 = df_raw.iloc[0].fillna('').astype(str).str.strip().str.upper()
-        row1 = df_raw.iloc[1].fillna('').astype(str).str.strip().str.lower()
-        
-        bloques = []
-        current_title = ""
-        start_idx = 0
-        for i, val in enumerate(row0):
-            if val != '' and val != 'NAN' and not val.startswith('UNNAMED'):
-                if current_title:
-                    bloques.append((current_title, start_idx, i))
-                current_title = val
-                start_idx = i
-        if current_title:
-            bloques.append((current_title, start_idx, len(row0)))
-            
-        for titulo_bloque, start, end in bloques:
-            headers_bloque = row1[start:end].tolist()
-            df_bloque = df_raw.iloc[2:, start:end].copy().reset_index(drop=True)
-            df_bloque.columns = headers_bloque
-            
-            valid_cols = [c for c in headers_bloque if c != '' and c != 'nan' and not c.startswith('unnamed')]
-            if not valid_cols: continue
-            
-            df_bloque = df_bloque[valid_cols].dropna(how='all')
-            
-            if "PLAZO" in titulo_bloque or "INVERSIONES" in titulo_bloque or "POLIZAS" in titulo_bloque:
-                mmin_col = next((c for c in df_bloque.columns if 'monto_minimo' in c), None)
-                mmax_col = next((c for c in df_bloque.columns if 'monto_maximo' in c), None)
-                dmin_col = next((c for c in df_bloque.columns if 'dias_minimo' in c), None)
-                dmax_col = next((c for c in df_bloque.columns if 'dias_maximo' in c), None)
-                tna_col = next((c for c in df_bloque.columns if 'tasa_nominal' in c or 'tasa_pago_vencimiento' in c), None)
-                
-                if dmin_col and tna_col:
-                    mmin = limpiar_numeros(df_bloque[mmin_col]).fillna(0.0) if mmin_col else 0.0
-                    mmax = limpiar_numeros(df_bloque[mmax_col]).fillna(99999999.0) if mmax_col else 99999999.0
-                    dmin = limpiar_numeros(df_bloque[dmin_col]).fillna(1).astype(int)
-                    dmax = limpiar_numeros(df_bloque[dmax_col]).fillna(9999).astype(int)
-                    tna = limpiar_numeros(df_bloque[tna_col]).fillna(0.0)
-                    
-                    temp_pf = pd.DataFrame({
-                        'banco': sheet,
-                        'monto_minimo': mmin,
-                        'monto_maximo': mmax,
-                        'dias_minimo': dmin,
-                        'dias_maximo': dmax,
-                        'tasa_nominal_porcentaje': tna
-                    })
-                    
-                    temp_pf = temp_pf[temp_pf['tasa_nominal_porcentaje'] > 0]
-                    if not temp_pf.empty:
-                        tablas_pf.append(temp_pf)
 
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
     df_final_ap = pd.concat(tablas_ap, ignore_index=True) if tablas_ap else pd.DataFrame()
