@@ -71,7 +71,7 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    """Evalúa las condiciones por banco de forma aislada. Excluye entradas <= 0."""
+    """Evalúa las condiciones por banco de forma aislada. Excluye entradas <= 0 o que no cumplan el monto y plazo mínimo."""
     if df.empty or monto <= 0 or dias <= 0:
         return pd.DataFrame()
         
@@ -81,7 +81,7 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         df_banco = df[df['banco'] == banco].copy()
         banco_upper = str(banco).upper()
         
-        # LÓGICA AISLADA BANCO SOLIDARIO: EL MONTO ES OBLIGATORIO Y EL PLAZO ES OPCIONAL (BONIFICACIÓN)
+        # LÓGICA AISLADA BANCO SOLIDARIO: AHORRO PROGRAMADO
         if tipo == 'ap' and "SOLIDARIO" in banco_upper:
             df_monto_match = df_banco[(df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & 
                                       (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))]
@@ -141,12 +141,17 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             resultados.append(mejor)
             continue
 
-        # LÓGICA ESTÁNDAR PARA EL RESTO DE BANCOS Y PLAZO FIJO
+        # LÓGICA ESTÁNDAR PARA EL RESTO DE BANCOS (Y PLAZO FIJO)
         mask_monto = (df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
                      (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))
         df_monto_valido = df_banco[mask_monto].copy()
         
         if df_monto_valido.empty:
+            continue
+        
+        # OBLIGATORIEDAD DE PLAZO MÍNIMO: Si el plazo ingresado es menor al plazo mínimo exigido, se descarta
+        min_dias_banco = df_monto_valido['dias_minimo'].min()
+        if pd.notna(min_dias_banco) and dias < min_dias_banco:
             continue
         
         exact_dias = df_monto_valido[(df_monto_valido['dias_minimo'] <= dias) & (df_monto_valido['dias_maximo'] >= dias)]
