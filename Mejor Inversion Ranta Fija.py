@@ -168,6 +168,9 @@ def cargar_datos_inversiones():
             dmin_col = next((c for c in df_data.columns if 'dias_min' in c or 'plazo_min' in c), None)
             dmax_col = next((c for c in df_data.columns if 'dias_max' in c or 'plazo_max' in c), None)
             tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tasa_pago' in c or 'tna' in c), None)
+            
+            # Detección puntual de columna de bonificación/premio (Caso Banco Solidario)
+            bono_col = next((c for c in df_data.columns if 'bonificac' in c or 'premio' in c or 'bono' in c), None)
 
             # Fallbacks posicionales solo para Dias y Tasa
             if dmin_col is None and len(df_data.columns) >= 2:
@@ -182,7 +185,11 @@ def cargar_datos_inversiones():
                 
                 dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
                 dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
-                tna = limpiar_numeros(df_data[tna_col]).fillna(0.0)
+                
+                tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
+                bono_val = limpiar_numeros(df_data[bono_col]).fillna(0.0) if bono_col else pd.Series(0.0, index=df_data.index)
+                
+                tna_total = tna_base + bono_val
 
                 temp_df = pd.DataFrame({
                     'banco': sheet,
@@ -190,7 +197,9 @@ def cargar_datos_inversiones():
                     'monto_maximo': mmax,
                     'dias_minimo': dmin,
                     'dias_maximo': dmax,
-                    'tna': tna
+                    'tna': tna_total,
+                    'tna_base': tna_base,
+                    'bono': bono_val
                 })
                 
                 temp_df = temp_df[temp_df['tna'] > 0]
@@ -204,6 +213,7 @@ def cargar_datos_inversiones():
                     elif "PRODUBANCO" in banco_norm: prod_name = "Flexi Ahorro"
                     elif "JEP" in banco_norm: prod_name = "Ahorro Fondo JEP"
                     elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
+                    elif "SOLIDARIO" in banco_norm: prod_name = "Futuro Seguro"
                     temp_df['producto'] = prod_name
                     tablas_ap.append(temp_df)
 
@@ -279,6 +289,9 @@ with tab_pf:
                             rango += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
                             
                         tna = f"{row['tna']:.2f}%"
+                        if 'bono' in row and row['bono'] > 0:
+                            tna += f"<br><span style='font-size:10px; color:#94A3B8;'>({row['tna_base']:.2f}% Base + {row['bono']:.2f}% Bono)</span>"
+
                         ganancia = f"${row['ganancia_estimada']:,.2f}"
                         html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
@@ -327,7 +340,9 @@ with tab_ap:
                             rango_dias += f"<br><span style='font-size:10px; color:#ef4444;'>(Más cercano)</span>"
                             
                         tna = f"{row['tna']:.2f}%"
-                        
+                        if 'bono' in row and row['bono'] > 0:
+                            tna += f"<br><span style='font-size:10px; color:#94A3B8;'>({row['tna_base']:.2f}% Base + {row['bono']:.2f}% Bono)</span>"
+                            
                         html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
