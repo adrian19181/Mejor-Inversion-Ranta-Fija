@@ -71,7 +71,7 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    """Evalúa primero el subconjunto de MONTO válido por banco y luego busca la coincidencia exacta o cercana de DÍAS."""
+    """Evalúa primero el subconjunto de MONTO válido por banco y luego busca la coincidencia exacta o cercana (hasta 10 días) de DÍAS."""
     if df.empty:
         return pd.DataFrame()
         
@@ -80,32 +80,35 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
     for banco in df['banco'].unique():
         df_banco = df[df['banco'] == banco].copy()
         
-        # 1. Filtrar primero por el monto ingresado por el cliente
+        # 1. Filtrar primero de forma estricta por el monto ingresado por el cliente
         mask_monto = (df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
                      (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))
         df_monto_valido = df_banco[mask_monto].copy()
         
-        # Si no hay opciones en ese rango de monto exacto, usar todo el catálogo del banco como fallback
-        target_df = df_monto_valido if not df_monto_valido.empty else df_banco
+        # Si no cumple el monto mínimo/máximo requerido por la institución, queda completamente excluida
+        if df_monto_valido.empty:
+            continue
         
         # 2. Buscar coincidencia exacta en DÍAS dentro de las opciones de monto elegibles
-        exact_dias = target_df[(target_df['dias_minimo'] <= dias) & (target_df['dias_maximo'] >= dias)]
+        exact_dias = df_monto_valido[(df_monto_valido['dias_minimo'] <= dias) & (df_monto_valido['dias_maximo'] >= dias)]
         
         if not exact_dias.empty:
             mejor = exact_dias.sort_values(by='tna', ascending=False).iloc[0].copy()
             mejor['es_exacto'] = True
             resultados.append(mejor)
         else:
-            # 3. Si no hay día exacto, buscar el escalón de DÍAS más cercano dentro de la matriz de su monto
-            target_df['distancia_dias'] = target_df.apply(
+            # 3. Si no hay día exacto, buscar el escalón de DÍAS más cercano con ventana de tolerancia (hasta 10 días por debajo)
+            df_monto_valido['distancia_dias'] = df_monto_valido.apply(
                 lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
             )
-            min_dist = target_df['distancia_dias'].min()
-            closest_rows = target_df[target_df['distancia_dias'] == min_dist].copy()
+            min_dist = df_monto_valido['distancia_dias'].min()
             
-            mejor = closest_rows.sort_values(by='tna', ascending=False).iloc[0].copy()
-            mejor['es_exacto'] = False
-            resultados.append(mejor)
+            # Solo incluir si la diferencia está dentro de los 10 días de tolerancia
+            if min_dist <= 10:
+                closest_rows = df_monto_valido[df_monto_valido['distancia_dias'] == min_dist].copy()
+                mejor = closest_rows.sort_values(by='tna', ascending=False).iloc[0].copy()
+                mejor['es_exacto'] = False
+                resultados.append(mejor)
             
     if resultados:
         res_df = pd.DataFrame(resultados).sort_values(by='tna', ascending=False).reset_index(drop=True)
@@ -190,7 +193,7 @@ def cargar_datos_inversiones():
                     
                     if dmin_col:
                         dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
-                        dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                        dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else pd.Series(9999, index=df_data.index)
                     else:
                         dmin = pd.Series(1, index=df_data.index)
                         dmax = pd.Series(9999, index=df_data.index)
@@ -235,7 +238,7 @@ def cargar_datos_inversiones():
                     
                     if dmin_col:
                         dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
-                        dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else dmin
+                        dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else pd.Series(9999, index=df_data.index)
                     else:
                         dmin = pd.Series(1, index=df_data.index)
                         dmax = pd.Series(9999, index=df_data.index)
