@@ -112,6 +112,12 @@ def cargar_datos_inversiones():
     tablas_pf = []
     tablas_ap = []
 
+    # Lista explícita y estricta de instituciones cuyo Bloque 2 corresponde a Ahorro Programado
+    BANCOS_AP_VALIDOS = [
+        "AUSTRO", "JARDIN AZUAYO", "MACHALA", "MUTUALISTA AZUAY", 
+        "PRODUBANCO", "29 DE OCTUBRE", "COOPERCO", "JEP", "SOLIDARIO"
+    ]
+
     for sheet in xl.sheet_names:
         if sheet == "Tasas Referenciales": continue
         
@@ -133,7 +139,7 @@ def cargar_datos_inversiones():
                 curr_block = [col_idx]
         bloques_tablas.append(curr_block)
 
-        # BLOQUE 1 (Índice 0): PLAZO FIJO
+        # BLOQUE 1 (Índice 0): PLAZO FIJO (Aplica para todas las instituciones)
         if len(bloques_tablas) >= 1:
             cols_pf = bloques_tablas[0]
             df_bloque_raw = df_raw.iloc[:, cols_pf].copy()
@@ -173,8 +179,8 @@ def cargar_datos_inversiones():
                 if not temp_df.empty:
                     tablas_pf.append(temp_df)
 
-        # BLOQUE 2 (Índice 1): AHORRO PROGRAMADO
-        if len(bloques_tablas) >= 2:
+        # BLOQUE 2 (Índice 1): AHORRO PROGRAMADO (Filtrado estricto solo para entidades autorizadas)
+        if len(bloques_tablas) >= 2 and any(b in banco_norm for b in BANCOS_AP_VALIDOS):
             cols_ap = bloques_tablas[1]
             df_bloque_raw = df_raw.iloc[:, cols_ap].copy()
             row1_headers = df_bloque_raw.iloc[1].fillna('').astype(str).str.strip().str.lower().tolist()
