@@ -81,9 +81,8 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         df_banco = df[df['banco'] == banco].copy()
         banco_upper = str(banco).upper()
         
-        # LÓGICA AISLADA DE DOBLE BÚSQUEDA INDEPENDIENTE: BANCO SOLIDARIO (AHORRO PROGRAMADO)
+        # LÓGICA AISLADA BANCO SOLIDARIO: EL MONTO ES OBLIGATORIO Y EL PLAZO ES OPCIONAL (BONIFICACIÓN)
         if tipo == 'ap' and "SOLIDARIO" in banco_upper:
-            # 1. Búsqueda por Monto para obtener TNA Base
             df_monto_match = df_banco[(df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & 
                                       (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))]
             
@@ -96,16 +95,14 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             if tna_base <= 0:
                 continue
                 
-            # 2. Búsqueda independiente por Días para obtener Bonificación
             df_bonos = df_banco[(df_banco['bono'] > 0) & (df_banco['dias_minimo'] > 0)].copy()
             
             applied_bono = 0.0
-            applied_dmin = 1
+            applied_dmin = 0
             applied_dmax = 9999
             es_exacto = True
             
             if not df_bonos.empty:
-                # Coincidencia exacta de días
                 exact_bono = df_bonos[(df_bonos['dias_minimo'] <= dias) & (df_bonos['dias_maximo'] >= dias)]
                 if not exact_bono.empty:
                     best_bono_row = exact_bono.sort_values(by='bono', ascending=False).iloc[0]
@@ -114,7 +111,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
                     applied_dmax = int(best_bono_row['dias_maximo'])
                     es_exacto = True
                 else:
-                    # Tolerancia de hasta 10 días por debajo del plazo mínimo requerido
                     df_bonos['diff_dias'] = df_bonos['dias_minimo'] - dias
                     df_tol = df_bonos[(df_bonos['diff_dias'] > 0) & (df_bonos['diff_dias'] <= 10)]
                     if not df_tol.empty:
@@ -123,6 +119,10 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
                         applied_dmin = int(best_tol_row['dias_minimo'])
                         applied_dmax = int(best_tol_row['dias_maximo'])
                         es_exacto = False
+                    else:
+                        applied_dmin = 0
+                        applied_dmax = 9999
+                        es_exacto = True
             
             tna_total = tna_base + applied_bono
             
@@ -402,6 +402,8 @@ with tab_pf:
                         
                         if (row['dias_minimo'] == 0 or row['dias_minimo'] == 1) and row['dias_maximo'] == 9999:
                             rango = "Libre / Sin plazo"
+                        elif row['dias_minimo'] == 0 and row['dias_maximo'] == 0:
+                            rango = "Libre / Sin plazo"
                         elif row['dias_minimo'] == row['dias_maximo']:
                             rango = f"{int(row['dias_minimo'])} días"
                         else:
@@ -457,6 +459,8 @@ with tab_ap:
                         institucion = f"{banco_fmt}<br>{prod_fmt}"
                         
                         if (row['dias_minimo'] == 0 or row['dias_minimo'] == 1) and row['dias_maximo'] == 9999:
+                            rango_dias = "Libre / Sin plazo"
+                        elif row['dias_minimo'] == 0 and row['dias_maximo'] == 0:
                             rango_dias = "Libre / Sin plazo"
                         elif row['dias_minimo'] == row['dias_maximo']:
                             rango_dias = f"{int(row['dias_minimo'])} días"
