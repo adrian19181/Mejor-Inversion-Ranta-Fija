@@ -79,69 +79,93 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
     
     for banco in df['banco'].unique():
         df_banco = df[df['banco'] == banco].copy()
+        banco_upper = str(banco).upper()
         
-        is_solidario = "SOLIDARIO" in str(banco).upper()
-        
-        if is_solidario:
-            # Regla de Banco Solidario: el cliente debe cumplir el monto minimo requerido del plan
-            df_monto_valido = df_banco[(df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto))].copy()
-            if df_monto_valido.empty:
+        # LÓGICA AISLADA DE DOBLE BÚSQUEDA INDEPENDIENTE: BANCO SOLIDARIO (AHORRO PROGRAMADO)
+        if tipo == 'ap' and "SOLIDARIO" in banco_upper:
+            # 1. Búsqueda por Monto para obtener TNA Base
+            df_monto_match = df_banco[(df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & 
+                                      (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))]
+            
+            if df_monto_match.empty:
                 continue
                 
-            df_con_plazo = df_monto_valido[df_monto_valido['dias_minimo'] > 0].copy()
+            row_monto = df_monto_match.iloc[0]
+            tna_base = row_monto['tna_base']
             
-            if not df_con_plazo.empty:
-                exact_dias = df_con_plazo[(df_con_plazo['dias_minimo'] <= dias) & (df_con_plazo['dias_maximo'] >= dias)]
-                if not exact_dias.empty:
-                    mejor = exact_dias.sort_values(by='tna', ascending=False).iloc[0].copy()
-                    mejor['es_exacto'] = True
-                    resultados.append(mejor)
-                    continue
+            if tna_base <= 0:
+                continue
                 
-                df_con_plazo['distancia_dias'] = df_con_plazo.apply(
-                    lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
-                )
-                min_dist = df_con_plazo['distancia_dias'].min()
-                if min_dist <= 10:
-                    closest_rows = df_con_plazo[df_con_plazo['distancia_dias'] == min_dist].copy()
-                    mejor = closest_rows.sort_values(by='tna', ascending=False).iloc[0].copy()
-                    mejor['es_exacto'] = False
-                    resultados.append(mejor)
-                    continue
+            # 2. Búsqueda independiente por Días para obtener Bonificación
+            df_bonos = df_banco[(df_banco['bono'] > 0) & (df_banco['dias_minimo'] > 0)].copy()
             
-            df_sin_plazo = df_monto_valido[df_monto_valido['dias_minimo'] == 0].copy()
-            if not df_sin_plazo.empty:
-                df_sp_monto = df_sin_plazo[(df_sin_plazo['monto_maximo'].isna() | (df_sin_plazo['monto_maximo'] >= monto))]
-                if not df_sp_monto.empty:
-                    mejor = df_sp_monto.sort_values(by='tna', ascending=False).iloc[0].copy()
-                    mejor['es_exacto'] = True
-                    resultados.append(mejor)
+            applied_bono = 0.0
+            applied_dmin = 1
+            applied_dmax = 9999
+            es_exacto = True
+            
+            if not df_bonos.empty:
+                # Coincidencia exacta de días
+                exact_bono = df_bonos[(df_bonos['dias_minimo'] <= dias) & (df_bonos['dias_maximo'] >= dias)]
+                if not exact_bono.empty:
+                    best_bono_row = exact_bono.sort_values(by='bono', ascending=False).iloc[0]
+                    applied_bono = float(best_bono_row['bono'])
+                    applied_dmin = int(best_bono_row['dias_minimo'])
+                    applied_dmax = int(best_bono_row['dias_maximo'])
+                    es_exacto = True
+                else:
+                    # Tolerancia de hasta 10 días por debajo del plazo mínimo requerido
+                    df_bonos['diff_dias'] = df_bonos['dias_minimo'] - dias
+                    df_tol = df_bonos[(df_bonos['diff_dias'] > 0) & (df_bonos['diff_dias'] <= 10)]
+                    if not df_tol.empty:
+                        best_tol_row = df_tol.sort_values(by='diff_dias', ascending=True).iloc[0]
+                        applied_bono = float(best_tol_row['bono'])
+                        applied_dmin = int(best_tol_row['dias_minimo'])
+                        applied_dmax = int(best_tol_row['dias_maximo'])
+                        es_exacto = False
+            
+            tna_total = tna_base + applied_bono
+            
+            mejor = pd.Series({
+                'banco': banco,
+                'producto': row_monto.get('producto', 'Futuro Seguro'),
+                'monto_minimo': row_monto['monto_minimo'],
+                'monto_maximo': row_monto['monto_maximo'],
+                'dias_minimo': applied_dmin,
+                'dias_maximo': applied_dmax,
+                'tna': tna_total,
+                'tna_base': tna_base,
+                'bono': applied_bono,
+                'es_exacto': es_exacto
+            })
+            resultados.append(mejor)
+            continue
+
+        # LÓGICA ESTÁNDAR PARA EL RESTO DE BANCOS Y PLAZO FIJO
+        mask_monto = (df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
+                     (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))
+        df_monto_valido = df_banco[mask_monto].copy()
+        
+        if df_monto_valido.empty:
+            continue
+        
+        exact_dias = df_monto_valido[(df_monto_valido['dias_minimo'] <= dias) & (df_monto_valido['dias_maximo'] >= dias)]
+        
+        if not exact_dias.empty:
+            mejor = exact_dias.sort_values(by='tna', ascending=False).iloc[0].copy()
+            mejor['es_exacto'] = True
+            resultados.append(mejor)
         else:
-            # Lógica estándar para las demás instituciones
-            mask_monto = (df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
-                         (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))
-            df_monto_valido = df_banco[mask_monto].copy()
+            df_monto_valido['distancia_dias'] = df_monto_valido.apply(
+                lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
+            )
+            min_dist = df_monto_valido['distancia_dias'].min()
             
-            if df_monto_valido.empty:
-                continue
-            
-            exact_dias = df_monto_valido[(df_monto_valido['dias_minimo'] <= dias) & (df_monto_valido['dias_maximo'] >= dias)]
-            
-            if not exact_dias.empty:
-                mejor = exact_dias.sort_values(by='tna', ascending=False).iloc[0].copy()
-                mejor['es_exacto'] = True
+            if min_dist <= 10:
+                closest_rows = df_monto_valido[df_monto_valido['distancia_dias'] == min_dist].copy()
+                mejor = closest_rows.sort_values(by='tna', ascending=False).iloc[0].copy()
+                mejor['es_exacto'] = False
                 resultados.append(mejor)
-            else:
-                df_monto_valido['distancia_dias'] = df_monto_valido.apply(
-                    lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
-                )
-                min_dist = df_monto_valido['distancia_dias'].min()
-                
-                if min_dist <= 10:
-                    closest_rows = df_monto_valido[df_monto_valido['distancia_dias'] == min_dist].copy()
-                    mejor = closest_rows.sort_values(by='tna', ascending=False).iloc[0].copy()
-                    mejor['es_exacto'] = False
-                    resultados.append(mejor)
             
     if resultados:
         res_df = pd.DataFrame(resultados).sort_values(by='tna', ascending=False).reset_index(drop=True)
@@ -225,10 +249,10 @@ def cargar_datos_inversiones():
                     mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
                     
                     if dmin_col:
-                        dmin = limpiar_numeros(df_data[dmin_col]).fillna(0).astype(int)
+                        dmin = limpiar_numeros(df_data[dmin_col]).fillna(1).astype(int)
                         dmax = limpiar_numeros(df_data[dmax_col]).fillna(9999).astype(int) if dmax_col else pd.Series(9999, index=df_data.index)
                     else:
-                        dmin = pd.Series(0, index=df_data.index)
+                        dmin = pd.Series(1, index=df_data.index)
                         dmax = pd.Series(9999, index=df_data.index)
 
                     tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
@@ -378,8 +402,6 @@ with tab_pf:
                         
                         if (row['dias_minimo'] == 0 or row['dias_minimo'] == 1) and row['dias_maximo'] == 9999:
                             rango = "Libre / Sin plazo"
-                        elif row['dias_minimo'] == 0 and row['dias_maximo'] == 0:
-                            rango = "Libre / Sin plazo"
                         elif row['dias_minimo'] == row['dias_maximo']:
                             rango = f"{int(row['dias_minimo'])} días"
                         else:
@@ -435,8 +457,6 @@ with tab_ap:
                         institucion = f"{banco_fmt}<br>{prod_fmt}"
                         
                         if (row['dias_minimo'] == 0 or row['dias_minimo'] == 1) and row['dias_maximo'] == 9999:
-                            rango_dias = "Libre / Sin plazo"
-                        elif row['dias_minimo'] == 0 and row['dias_maximo'] == 0:
                             rango_dias = "Libre / Sin plazo"
                         elif row['dias_minimo'] == row['dias_maximo']:
                             rango_dias = f"{int(row['dias_minimo'])} días"
