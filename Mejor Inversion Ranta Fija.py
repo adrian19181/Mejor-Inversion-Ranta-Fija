@@ -421,10 +421,14 @@ with tab_pf:
                         if 'bono' in row and row['bono'] > 0:
                             tna += f"<br><span style='font-size:10px; color:#94A3B8;'>({row['tna_base']:.2f}% Base + {row['bono']:.2f}% Bono)</span>"
 
-                        ganancia = f"${row['ganancia_estimada']:,.2f}"
-                        html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+                        tna_val = float(row['tna'])
+                        tna_periodo_val = tna_val * (plazo_dias / 360.0)
+                        tna_periodo_str = f"{tna_periodo_val:.2f}%"
 
-                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
+                        ganancia = f"${row['ganancia_estimada']:,.2f}"
+                        html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
 
 with tab_ap:
     if df_ap.empty:
