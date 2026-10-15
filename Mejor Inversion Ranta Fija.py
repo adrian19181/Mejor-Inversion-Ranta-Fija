@@ -560,3 +560,38 @@ if not df_ref.empty and len(df_ref.columns) >= 2:
                 'staticPlot': False
             }
         )
+
+        if not df_chart.empty:
+            max_idx = df_chart['tasa_val'].idxmax()
+            min_idx = df_chart['tasa_val'].idxmin()
+            
+            row_max = df_chart.loc[max_idx]
+            row_min = df_chart.loc[min_idx]
+            
+            tasa_max = row_max['tasa_val']
+            fecha_max = f"{meses_nombres[row_max['fecha_dt'].month - 1]} {row_max['fecha_dt'].year}"
+            
+            tasa_min = row_min['tasa_val']
+            fecha_min = f"{meses_nombres[row_min['fecha_dt'].month - 1]} {row_min['fecha_dt'].year}"
+            
+            tasa_prom = df_chart['tasa_val'].mean()
+            
+            st.markdown(f"""
+            <div class="kpi-flex-container">
+                <div class="kpi-card-compact">
+                    <div class="kpi-title-compact">Pico Máximo</div>
+                    <div class="kpi-value-compact" style="color: #22c55e;">{tasa_max:.2f}%</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">{fecha_max}</div>
+                </div>
+                <div class="kpi-card-compact">
+                    <div class="kpi-title-compact">Pico Mínimo</div>
+                    <div class="kpi-value-compact" style="color: #ef4444;">{tasa_min:.2f}%</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">{fecha_min}</div>
+                </div>
+                <div class="kpi-card-compact">
+                    <div class="kpi-title-compact">Promedio Periodo</div>
+                    <div class="kpi-value-compact" style="color: #38bdf8;">{tasa_prom:.2f}%</div>
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Filtro: {anio_seleccionado}</div>
+                </div>
+            </div><br>
+            """, unsafe_allow_html=True)
