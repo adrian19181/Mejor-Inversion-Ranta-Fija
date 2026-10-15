@@ -621,13 +621,17 @@ if not df_ref.empty and len(df_ref.columns) >= 2:
                 
                 tasa_3m = max(0, pred_3)
                 tendencia_str = "↗️ Alza" if slope > 0.015 else ("↘️ Baja" if slope < -0.015 else "➡️ Estable")
+                
+                diff_1m = tasa_1m - y[-1]
+                icono_1m = "↗️" if diff_1m > 0.015 else ("↘️" if diff_1m < -0.015 else "➡️")
+                
                 rango_3m = f"[{max(0, min(tasa_1m, tasa_3m) - margen_1):.2f}% - {max(tasa_1m, tasa_3m) + margen_1:.2f}%]"
                 
                 st.markdown(f"""
                 <div class="kpi-flex-container">
                     <div class="kpi-card-compact">
                         <div class="kpi-title-compact">Proyección Próximo Mes (t+1)</div>
-                        <div class="kpi-value-compact" style="color: #a855f7;">{tasa_1m:.2f}%</div>
+                        <div class="kpi-value-compact" style="color: #a855f7;">{icono_1m} {tasa_1m:.2f}%</div>
                         <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">IC 95%: {rango_1m}</div>
                     </div>
                     <div class="kpi-card-compact">
