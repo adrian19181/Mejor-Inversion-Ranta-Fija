@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
+import plotly.express as px
 
 if __name__ == "__main__" and not st.runtime.exists():
     from streamlit.web import cli as stcli
@@ -495,7 +496,7 @@ with tab_ap:
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEA Periodo<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
 
 df_ref = cargar_tasas_referenciales()
 if not df_ref.empty and len(df_ref.columns) >= 2:
@@ -520,3 +521,42 @@ if not df_ref.empty and len(df_ref.columns) >= 2:
             <div class="kpi-card-compact"><div class="kpi-title-compact">Promedio Anual<br>({fecha_kpi.year})</div><div class="kpi-value-compact" style="color: #38bdf8;">{tasa_promedio_anio:.2f}%</div></div>
         </div><br>
         """, unsafe_allow_html=True)
+
+        df_validos['anio'] = df_validos['fecha_dt'].dt.year
+        anios_unicos = sorted(df_validos['anio'].unique(), reverse=True)
+        opciones_anio = ["Todos"] + [str(a) for a in anios_unicos]
+
+        anio_seleccionado = st.selectbox("📅 Filtrar por año:", opciones_anio, index=0)
+
+        if anio_seleccionado != "Todos":
+            df_chart = df_validos[df_validos['anio'] == int(anio_seleccionado)].copy()
+        else:
+            df_chart = df_validos.copy()
+
+        fig = px.line(
+            df_chart,
+            x='fecha_dt',
+            y='tasa_val',
+            labels={'fecha_dt': 'Fecha', 'tasa_val': 'Tasa (%)'}
+        )
+        fig.update_traces(line_color='#22c55e', line_width=2.5)
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF'),
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis=dict(showgrid=True, gridcolor='#334155', title=None),
+            yaxis=dict(showgrid=True, gridcolor='#334155', title='Tasa (%)'),
+            dragmode=False
+        )
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={
+                'scrollZoom': False,
+                'displayModeBar': False,
+                'doubleClick': False,
+                'showAxisDragHandles': False,
+                'staticPlot': False
+            }
+        )
