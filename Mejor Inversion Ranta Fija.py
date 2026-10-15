@@ -595,3 +595,45 @@ if not df_ref.empty and len(df_ref.columns) >= 2:
                 </div>
             </div><br>
             """, unsafe_allow_html=True)
+
+            # --- CÁLCULO DE PROYECCIÓN Y TENDENCIA (Dinámico según filtro) ---
+            df_mensual = df_chart.copy()
+            df_mensual['year_month'] = df_mensual['fecha_dt'].dt.strftime('%Y-%m')
+            df_serie = df_mensual.groupby('year_month')['tasa_val'].last().values
+            
+            if len(df_serie) >= 3:
+                y = df_serie[-12:]
+                n = len(y)
+                x = np.arange(1, n + 1)
+                
+                slope, intercept = np.polyfit(x, y, 1)
+                
+                pred_1 = slope * (n + 1) + intercept
+                pred_3 = slope * (n + 3) + intercept
+                
+                residuals = y - (slope * x + intercept)
+                se = np.sqrt(np.sum(residuals**2) / (n - 2)) if n > 2 else 0
+                ci_95 = 1.96 * se
+                margen_1 = max(0.05, ci_95)
+                
+                tasa_1m = max(0, pred_1)
+                rango_1m = f"[{max(0, tasa_1m - margen_1):.2f}% - {tasa_1m + margen_1:.2f}%]"
+                
+                tasa_3m = max(0, pred_3)
+                tendencia_str = "↗️ Alza" if slope > 0.015 else ("↘️ Baja" if slope < -0.015 else "➡️ Estable")
+                rango_3m = f"[{max(0, min(tasa_1m, tasa_3m) - margen_1):.2f}% - {max(tasa_1m, tasa_3m) + margen_1:.2f}%]"
+                
+                st.markdown(f"""
+                <div class="kpi-flex-container">
+                    <div class="kpi-card-compact">
+                        <div class="kpi-title-compact">Proyección Próximo Mes (t+1)</div>
+                        <div class="kpi-value-compact" style="color: #a855f7;">{tasa_1m:.2f}%</div>
+                        <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">IC 95%: {rango_1m}</div>
+                    </div>
+                    <div class="kpi-card-compact">
+                        <div class="kpi-title-compact">Tendencia 3 Meses (t+3)</div>
+                        <div class="kpi-value-compact" style="color: #a855f7;">{tendencia_str}</div>
+                        <div style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Rango Esperado: {rango_3m}</div>
+                    </div>
+                </div><br>
+                """, unsafe_allow_html=True)
