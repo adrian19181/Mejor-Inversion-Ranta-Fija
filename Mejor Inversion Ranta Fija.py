@@ -482,10 +482,13 @@ with tab_ap:
                         tna_val = float(row['tna'])
                         tea_val = ((1 + (tna_val / 1200.0)) ** 12 - 1) * 100.0
                         tea_str = f"{tea_val:.2f}%"
-                            
-                        html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td></tr>"
 
-                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
+                        tep_val = tna_val * (dias_ap / 360.0)
+                        tep_str = f"{tep_val:.2f}%"
+                            
+                        html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tep_str}</span></td></tr>"
+
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEP<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>📊 Tasas Pasivas Referenciales (BCE)</h3>", unsafe_allow_html=True)
