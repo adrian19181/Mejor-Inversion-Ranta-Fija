@@ -72,8 +72,7 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    """Evalúa las condiciones por banco de forma aislada. Excluye entradas <= 0 o que no cumplan el monto y plazo mínimo."""
-    if df.empty or monto <= 0 or dias <= 0:
+    if df.empty or monto <= 0:
         return pd.DataFrame()
         
     resultados = []
@@ -82,9 +81,26 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         df_banco = df[df['banco'] == banco].copy()
         banco_upper = str(banco).upper()
         
-        # LÓGICA AISLADA BANCO SOLIDARIO: AHORRO PROGRAMADO
+        if tipo == 'ca':
+            mask_monto = (df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
+                         (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))
+            df_monto_valido = df_banco[mask_monto].copy()
+            
+            if df_monto_valido.empty:
+                continue
+                
+            for prod in df_monto_valido['producto'].unique():
+                df_prod = df_monto_valido[df_monto_valido['producto'] == prod]
+                mejor = df_prod.sort_values(by='tna', ascending=False).iloc[0].copy()
+                mejor['es_exacto'] = True
+                resultados.append(mejor)
+            continue
+
+        if dias <= 0:
+            continue
+
         if tipo == 'ap' and "SOLIDARIO" in banco_upper:
-            df_monto_match = df_banco[(df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & 
+            df_monto_match = df_banco[(df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
                                       (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))]
             
             if df_monto_match.empty:
@@ -142,7 +158,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             resultados.append(mejor)
             continue
 
-        # LÓGICA ESTÁNDAR PARA EL RESTO DE BANCOS (Y PLAZO FIJO)
         mask_monto = (df_banco['monto_minimo'].isna() | (df_banco['monto_minimo'] <= monto)) & \
                      (df_banco['monto_maximo'].isna() | (df_banco['monto_maximo'] >= monto))
         df_monto_valido = df_banco[mask_monto].copy()
@@ -150,7 +165,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         if df_monto_valido.empty:
             continue
         
-        # OBLIGATORIEDAD DE PLAZO MÍNIMO: Si el plazo ingresado es menor al plazo mínimo exigido, se descarta
         min_dias_banco = df_monto_valido['dias_minimo'].min()
         if pd.notna(min_dias_banco) and dias < min_dias_banco:
             continue
@@ -175,7 +189,7 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             
     if resultados:
         res_df = pd.DataFrame(resultados).sort_values(by='tna', ascending=False).reset_index(drop=True)
-        if tipo == 'pf':
+        if tipo == 'pf' and dias > 0:
             res_df['ganancia_estimada'] = monto * (res_df['tna'] / 100.0) * (dias / 360.0)
         return res_df
         
@@ -201,10 +215,11 @@ def cargar_datos_inversiones():
         except Exception: pass
 
     if xl is None:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     tablas_pf = []
     tablas_ap = []
+    tablas_ca = []
 
     BANCOS_AP_VALIDOS = [
         "AUSTRO", "JARDIN AZUAYO", "MACHALA", 
@@ -233,7 +248,6 @@ def cargar_datos_inversiones():
                     curr_block = [col_idx]
             bloques_tablas.append(curr_block)
 
-            # BLOQUE 1: PLAZO FIJO
             if len(bloques_tablas) >= 1:
                 cols_pf = bloques_tablas[0]
                 df_bloque_raw = df_raw.iloc[:, cols_pf].copy()
@@ -277,7 +291,6 @@ def cargar_datos_inversiones():
                     if not temp_df.empty:
                         tablas_pf.append(temp_df)
 
-            # BLOQUE 2: AHORRO PROGRAMADO
             if len(bloques_tablas) >= 2 and any(b in banco_norm for b in BANCOS_AP_VALIDOS):
                 cols_ap = bloques_tablas[1]
                 df_bloque_raw = df_raw.iloc[:, cols_ap].copy()
@@ -334,12 +347,61 @@ def cargar_datos_inversiones():
                     temp_df = temp_df[temp_df['tna'] > 0]
                     if not temp_df.empty:
                         tablas_ap.append(temp_df)
+
+            indices_ca = []
+            if "AUSTRO" in banco_norm: indices_ca = [2]
+            elif "JARDIN AZUAYO" in banco_norm: indices_ca = [2]
+            elif "MUTUALISTA AZUAY" in banco_norm: indices_ca = [1, 2]
+            elif "PRODUBANCO" in banco_norm: indices_ca = [2]
+            elif "COOPERCO" in banco_norm: indices_ca = [2]
+            elif "JEP" in banco_norm: indices_ca = [2]
+            elif "SOLIDARIO" in banco_norm: indices_ca = [2]
+            elif "SANFRA" in banco_norm: indices_ca = [1]
+
+            for idx_ca in indices_ca:
+                if len(bloques_tablas) > idx_ca:
+                    cols_ca = bloques_tablas[idx_ca]
+                    df_bloque_raw = df_raw.iloc[:, cols_ca].copy()
+                    row1_headers = [normalizar_texto(h) for h in df_bloque_raw.iloc[1].tolist()]
+                    df_data = df_bloque_raw.iloc[2:].copy().reset_index(drop=True)
+                    df_data.columns = [f"col_{i}_{h}" for i, h in enumerate(row1_headers)]
+
+                    mmin_col = next((c for c in df_data.columns if 'monto_min' in c or 'saldo_min' in c or 'monto' in c or 'saldo' in c), None)
+                    mmax_col = next((c for c in df_data.columns if 'monto_max' in c or 'saldo_max' in c), None)
+                    tna_col = next((c for c in df_data.columns if 'tasa_nominal' in c or 'tna' in c or 'tasa_anual' in c or 'tasa' in c), None)
+
+                    if tna_col is None and len(df_data.columns) >= 1:
+                        tna_col = df_data.columns[-1]
+
+                    if tna_col:
+                        mmin = limpiar_numeros(df_data[mmin_col]) if mmin_col else pd.Series(0.0, index=df_data.index)
+                        mmax = limpiar_numeros(df_data[mmax_col]) if mmax_col else pd.Series(np.nan, index=df_data.index)
+                        tna_base = limpiar_numeros(df_data[tna_col]).fillna(0.0)
+
+                        main_header = str(df_bloque_raw.iloc[0].dropna().values[0]).strip() if not df_bloque_raw.iloc[0].dropna().empty else "Cuenta de Ahorros"
+
+                        temp_df = pd.DataFrame({
+                            'banco': sheet,
+                            'producto': main_header.title(),
+                            'monto_minimo': mmin,
+                            'monto_maximo': mmax,
+                            'dias_minimo': 0,
+                            'dias_maximo': 9999,
+                            'tna': tna_base,
+                            'tna_base': tna_base,
+                            'bono': 0.0
+                        })
+                        temp_df = temp_df[temp_df['tna'] > 0]
+                        if not temp_df.empty:
+                            tablas_ca.append(temp_df)
+
         except Exception:
             continue
 
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
     df_final_ap = pd.concat(tablas_ap, ignore_index=True) if tablas_ap else pd.DataFrame()
-    return df_final_pf, df_final_ap
+    df_final_ca = pd.concat(tablas_ca, ignore_index=True) if tablas_ca else pd.DataFrame()
+    return df_final_pf, df_final_ap, df_final_ca
 
 @st.cache_data(ttl=3600)
 def cargar_tasas_referenciales():
@@ -367,12 +429,12 @@ with col_btn2:
         st.cache_data.clear()
         st.rerun()
 
-df_pf, df_ap = cargar_datos_inversiones()
-if df_pf.empty and df_ap.empty:
+df_pf, df_ap, df_ca = cargar_datos_inversiones()
+if df_pf.empty and df_ap.empty and df_ca.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
     st.stop()
 
-tab_pf, tab_ap = st.tabs(["💰 Plazo Fijo", "📅 Ahorro Programado"])
+tab_pf, tab_ap, tab_ca = st.tabs(["💰 Plazo Fijo", "📅 Ahorro Programado", "💳 Cuentas de Ahorros"])
 
 with tab_pf:
     st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Inversión</h3>", unsafe_allow_html=True)
@@ -495,6 +557,55 @@ with tab_ap:
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEA Periodo<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
 
+with tab_ca:
+    if df_ca.empty:
+        st.info("No se encontraron productos de Cuentas de Ahorros en la base de datos.")
+    else:
+        st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Cuentas de Ahorros</h3>", unsafe_allow_html=True)
+        with st.form(key="formulario_ca"):
+            monto_ca_input = st.number_input("Saldo Promedio a Mantener ($ USD)", min_value=0.0, value=None, step=1.0)
+            submit_ca = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
+
+        if submit_ca:
+            if monto_ca_input is None:
+                st.warning("Por favor ingresa el saldo promedio para realizar la consulta.")
+            elif monto_ca_input < 0:
+                st.warning("El saldo debe ser mayor o igual a cero (0).")
+            else:
+                monto_ca = float(monto_ca_input)
+
+                resultados_ca = obtener_ranking_bancos(df_ca, monto_ca, 1, tipo='ca')
+
+                if resultados_ca.empty:
+                    st.error(f"No hay opciones disponibles de Cuentas de Ahorros para un saldo de ${monto_ca:,.2f}.")
+                else:
+                    st.markdown("---")
+                    st.markdown("<h3 style='text-align: center;'>🏆 Ranking Completo Cuentas de Ahorros</h3>", unsafe_allow_html=True)
+                    ganador_ca = resultados_ca.iloc[0]
+                    
+                    st.success(f"🥇 **Opción Ganadora:** **{ganador_ca['banco']} ({str(ganador_ca['producto']).title()})** con una TNA de **{ganador_ca['tna']:.2f}%**")
+
+                    html_rows_ca = ""
+                    for idx, row in resultados_ca.iterrows():
+                        banco_fmt = formatear_nombre_banco(row['banco'])
+                        prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
+                        institucion = f"{banco_fmt}<br>{prod_fmt}"
+                        
+                        rango_saldos = ""
+                        if pd.isna(row['monto_maximo']):
+                            rango_saldos = f"Desde ${float(row['monto_minimo']):,.2f}"
+                        else:
+                            rango_saldos = f"${float(row['monto_minimo']):,.2f} - ${float(row['monto_maximo']):,.2f}"
+                            
+                        tna = f"{row['tna']:.2f}%"
+                        tna_val = float(row['tna'])
+                        tea_val = ((1 + (tna_val / 1200.0)) ** 12 - 1) * 100.0
+                        tea_str = f"{tea_val:.2f}%"
+
+                        html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td></tr>"
+
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
+
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
 
@@ -596,7 +707,6 @@ if not df_ref.empty and len(df_ref.columns) >= 2:
             </div><br>
             """, unsafe_allow_html=True)
 
-            # --- CÁLCULO DE PROYECCIÓN Y TENDENCIA (Dinámico según filtro) ---
             df_mensual = df_chart.copy()
             df_mensual['year_month'] = df_mensual['fecha_dt'].dt.strftime('%Y-%m')
             df_serie = df_mensual.groupby('year_month')['tasa_val'].last().values
