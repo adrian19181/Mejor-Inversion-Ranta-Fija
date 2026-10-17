@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.express as px
+import streamlit.components.v1 as components
 
 if __name__ == "__main__" and not st.runtime.exists():
     from streamlit.web import cli as stcli
@@ -15,6 +16,17 @@ if __name__ == "__main__" and not st.runtime.exists():
     sys.exit(stcli.main())
 
 st.set_page_config(page_title="Mejor Inversión Renta Fija", page_icon="💰", layout="centered", initial_sidebar_state="collapsed")
+
+components.html("""
+<script>
+const doc = window.parent.document;
+doc.addEventListener('click', function(e) {
+    if (e.target && e.target.tagName === 'INPUT' && (e.target.type === 'number' || e.target.type === 'text')) {
+        e.target.select();
+    }
+});
+</script>
+""", height=0, width=0)
 
 st.markdown("""
 <style>
