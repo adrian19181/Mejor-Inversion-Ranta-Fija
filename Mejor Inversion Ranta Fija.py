@@ -72,7 +72,7 @@ def normalizar_texto(texto):
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
-    if df.empty or monto <= 0:
+    if df.empty or monto <= 0 or dias <= 0:
         return pd.DataFrame()
         
     resultados = []
@@ -94,9 +94,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
                 mejor = df_prod.sort_values(by='tna', ascending=False).iloc[0].copy()
                 mejor['es_exacto'] = True
                 resultados.append(mejor)
-            continue
-
-        if dias <= 0:
             continue
 
         if tipo == 'ap' and "SOLIDARIO" in banco_upper:
@@ -189,7 +186,7 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             
     if resultados:
         res_df = pd.DataFrame(resultados).sort_values(by='tna', ascending=False).reset_index(drop=True)
-        if tipo == 'pf' and dias > 0:
+        if tipo in ['pf', 'ca'] and dias > 0:
             res_df['ganancia_estimada'] = monto * (res_df['tna'] / 100.0) * (dias / 360.0)
         return res_df
         
@@ -561,18 +558,21 @@ with tab_ca:
     else:
         st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Cuentas de Ahorros</h3>", unsafe_allow_html=True)
         with st.form(key="formulario_ca"):
-            monto_ca_input = st.number_input("Saldo Promedio a Mantener ($ USD)", min_value=0.0, value=None, step=1.0)
+            col1, col2 = st.columns(2)
+            with col1: monto_ca_input = st.number_input("Saldo Promedio a Mantener ($ USD)", min_value=0.0, value=None, step=1.0)
+            with col2: dias_ca_input = st.number_input("Plazo a simular (Días)", min_value=0, max_value=3600, value=None, step=1)
             submit_ca = st.form_submit_button(label="🎯 Calcular Mejores Opciones", use_container_width=True)
 
         if submit_ca:
-            if monto_ca_input is None:
-                st.warning("Por favor ingresa el saldo promedio para realizar la consulta.")
-            elif monto_ca_input < 0:
-                st.warning("El saldo debe ser mayor o igual a cero (0).")
+            if monto_ca_input is None or dias_ca_input is None:
+                st.warning("Por favor ingresa tanto el saldo promedio como el plazo a simular para realizar la consulta.")
+            elif monto_ca_input <= 0 or dias_ca_input <= 0:
+                st.warning("El saldo y el plazo deben ser valores mayores a cero (0).")
             else:
                 monto_ca = float(monto_ca_input)
+                dias_ca = int(dias_ca_input)
 
-                resultados_ca = obtener_ranking_bancos(df_ca, monto_ca, 1, tipo='ca')
+                resultados_ca = obtener_ranking_bancos(df_ca, monto_ca, dias_ca, tipo='ca')
 
                 if resultados_ca.empty:
                     st.error(f"No hay opciones disponibles de Cuentas de Ahorros para un saldo de ${monto_ca:,.2f}.")
@@ -581,7 +581,7 @@ with tab_ca:
                     st.markdown("<h3 style='text-align: center;'>🏆 Ranking Completo Cuentas de Ahorros</h3>", unsafe_allow_html=True)
                     ganador_ca = resultados_ca.iloc[0]
                     
-                    st.success(f"🥇 **Opción Ganadora:** **{ganador_ca['banco']} ({str(ganador_ca['producto']).title()})** con una TNA de **{ganador_ca['tna']:.2f}%**")
+                    st.success(f"🥇 **Opción Ganadora:** **{ganador_ca['banco']} ({str(ganador_ca['producto']).title()})** con una TNA de **{ganador_ca['tna']:.2f}%** y una ganancia estimada de **${ganador_ca['ganancia_estimada']:,.2f}**")
 
                     html_rows_ca = ""
                     for idx, row in resultados_ca.iterrows():
@@ -597,12 +597,18 @@ with tab_ca:
                             
                         tna = f"{row['tna']:.2f}%"
                         tna_val = float(row['tna'])
+                        
+                        tna_periodo_val = tna_val * (dias_ca / 360.0)
+                        tna_periodo_str = f"{tna_periodo_val:.2f}%"
+                        
                         tea_val = ((1 + (tna_val / 1200.0)) ** 12 - 1) * 100.0
                         tea_str = f"{tea_val:.2f}%"
 
-                        html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td></tr>"
+                        ganancia = f"${row['ganancia_estimada']:,.2f}"
 
-                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
+                        html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>TEA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
