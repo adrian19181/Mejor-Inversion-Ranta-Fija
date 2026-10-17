@@ -352,11 +352,9 @@ def cargar_datos_inversiones():
             if "AUSTRO" in banco_norm: indices_ca = [2]
             elif "JARDIN AZUAYO" in banco_norm: indices_ca = [2]
             elif "MUTUALISTA AZUAY" in banco_norm: indices_ca = [1, 2]
-            elif "PRODUBANCO" in banco_norm: indices_ca = [2]
             elif "COOPERCO" in banco_norm: indices_ca = [2]
             elif "JEP" in banco_norm: indices_ca = [2]
             elif "SOLIDARIO" in banco_norm: indices_ca = [2]
-            elif "SANFRA" in banco_norm: indices_ca = [1]
 
             for idx_ca in indices_ca:
                 if len(bloques_tablas) > idx_ca:
