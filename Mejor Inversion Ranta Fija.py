@@ -459,6 +459,18 @@ with tab_pf:
                     ganador = resultados_pf.iloc[0]
                     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tna']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
+                    # GRAFICO TOP 5 PF
+                    top_5_pf = resultados_pf.head(5).copy()
+                    fig_bar_pf = px.bar(
+                        top_5_pf, x='banco', y='ganancia_estimada', text_auto='.2f',
+                        title="Top 5: Ganancia Estimada ($)",
+                        labels={'banco': '', 'ganancia_estimada': 'Ganancia ($)'},
+                        color='ganancia_estimada', color_continuous_scale='Viridis'
+                    )
+                    fig_bar_pf.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#FFFFFF'), showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
+                    fig_bar_pf.update_traces(textfont_size=14, textangle=0, textposition="outside", cliponaxis=False)
+                    st.plotly_chart(fig_bar_pf, use_container_width=True)
+
                     html_rows = ""
                     for idx, row in resultados_pf.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
@@ -487,6 +499,11 @@ with tab_pf:
                         html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    # BOTON DESCARGAR PF
+                    csv_pf = resultados_pf[['banco', 'dias_minimo', 'dias_maximo', 'tna', 'ganancia_estimada']].to_csv(index=False).encode('utf-8')
+                    st.download_button(label="📥 Descargar Ranking Completo en CSV", data=csv_pf, file_name=f"Ranking_PF_${monto}_{plazo_dias}dias.csv", mime="text/csv", use_container_width=True)
 
 with tab_ap:
     if df_ap.empty:
@@ -518,6 +535,18 @@ with tab_ap:
                     ganador_ap = resultados_ap.iloc[0]
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
+
+                    # GRAFICO TOP 5 AP (En este caso mostramos la TNA ya que AP no calcula ganancia_estimada de golpe)
+                    top_5_ap = resultados_ap.head(5).copy()
+                    fig_bar_ap = px.bar(
+                        top_5_ap, x='banco', y='tna', text_auto='.2f',
+                        title="Top 5: Mejores Tasas Nominales (TNA %)",
+                        labels={'banco': '', 'tna': 'TNA (%)'},
+                        color='tna', color_continuous_scale='Viridis'
+                    )
+                    fig_bar_ap.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#FFFFFF'), showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
+                    fig_bar_ap.update_traces(textfont_size=14, textangle=0, textposition="outside", cliponaxis=False)
+                    st.plotly_chart(fig_bar_ap, use_container_width=True)
 
                     html_rows_ap = ""
                     for idx, row in resultados_ap.iterrows():
@@ -551,6 +580,11 @@ with tab_ap:
                         html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tea_periodo_str}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEA Periodo<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    # BOTON DESCARGAR AP
+                    csv_ap = resultados_ap[['banco', 'producto', 'dias_minimo', 'dias_maximo', 'tna']].to_csv(index=False).encode('utf-8')
+                    st.download_button(label="📥 Descargar Ranking Completo en CSV", data=csv_ap, file_name=f"Ranking_AhorroProgramado_${aporte_ap}_{dias_ap}dias.csv", mime="text/csv", use_container_width=True)
 
 with tab_ca:
     if df_ca.empty:
@@ -583,6 +617,18 @@ with tab_ca:
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ca['banco']} ({str(ganador_ca['producto']).title()})** con una TNA de **{ganador_ca['tna']:.2f}%** y una ganancia estimada de **${ganador_ca['ganancia_estimada']:,.2f}**")
 
+                    # GRAFICO TOP 5 CA
+                    top_5_ca = resultados_ca.head(5).copy()
+                    fig_bar_ca = px.bar(
+                        top_5_ca, x='banco', y='ganancia_estimada', text_auto='.2f',
+                        title="Top 5: Ganancia Estimada ($)",
+                        labels={'banco': '', 'ganancia_estimada': 'Ganancia ($)'},
+                        color='ganancia_estimada', color_continuous_scale='Viridis'
+                    )
+                    fig_bar_ca.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#FFFFFF'), showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
+                    fig_bar_ca.update_traces(textfont_size=14, textangle=0, textposition="outside", cliponaxis=False)
+                    st.plotly_chart(fig_bar_ca, use_container_width=True)
+
                     html_rows_ca = ""
                     for idx, row in resultados_ca.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
@@ -609,6 +655,11 @@ with tab_ca:
                         html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>TEA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    # BOTON DESCARGAR CA
+                    csv_ca = resultados_ca[['banco', 'producto', 'tna', 'ganancia_estimada']].to_csv(index=False).encode('utf-8')
+                    st.download_button(label="📥 Descargar Ranking Completo en CSV", data=csv_ca, file_name=f"Ranking_CuentasAhorro_${monto_ca}_{dias_ca}dias.csv", mime="text/csv", use_container_width=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
