@@ -160,10 +160,17 @@ def buscar_calificacion_riesgo(banco_nombre, mapping):
 
     b_norm = normalizar_texto(banco_nombre)
 
-    if "jep" in b_norm:
-        b_norm = "juventud ecuatoriana progresista"
-    elif "cooperco" in b_norm:
-        b_norm = "erco"
+    alias = {
+        "banco del pacifico": "banco pacifico s.a.",
+        "coop sanfra": "san francisco",
+        "sanfra": "san francisco",
+        "produbanco": "banco produbanco s.a.",
+        "cooperco": "erco",
+        "jep": "juventud ecuatoriana progresista"
+    }
+
+    if b_norm in alias:
+        b_norm = alias[b_norm]
 
     if b_norm in mapping:
         return mapping[b_norm]
