@@ -160,26 +160,28 @@ def buscar_calificacion_riesgo(banco_nombre, mapping):
 
     b_norm = normalizar_texto(banco_nombre)
 
-    alias = {
-        "banco del pacifico": "banco pacifico s.a.",
-        "coop sanfra": "san francisco",
+    alias_map = {
+        "jep": "juventud ecuatoriana progresista",
         "sanfra": "san francisco",
         "produbanco": "banco produbanco s.a.",
         "cooperco": "erco",
-        "jep": "juventud ecuatoriana progresista"
+        "pacifico": "banco pacifico s.a."
     }
 
-    if b_norm in alias:
-        b_norm = alias[b_norm]
+    target_search = b_norm
+    for alias_key, alias_val in alias_map.items():
+        if alias_key in b_norm:
+            target_search = alias_val
+            break
 
-    if b_norm in mapping:
-        return mapping[b_norm]
+    if target_search in mapping:
+        return mapping[target_search]
 
     for k, v in mapping.items():
-        if b_norm in k or k in b_norm:
+        if target_search in k or k in target_search:
             return v
 
-    b_tokens = [t for t in b_norm.split() if t not in ['banco', 'cooperativa', 'de', 'ahorro', 'y', 'credito', 's.a.', 'ltda', 'limitada', 'c.a.', 'n.a.', 'asociacion', 'mutualista']]
+    b_tokens = [t for t in target_search.split() if t not in ['banco', 'cooperativa', 'de', 'ahorro', 'y', 'credito', 's.a.', 'ltda', 'limitada', 'c.a.', 'n.a.', 'asociacion', 'mutualista', 'coop']]
     if b_tokens:
         tok_str = ' '.join(b_tokens)
         for k, v in mapping.items():
