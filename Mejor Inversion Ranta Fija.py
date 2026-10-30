@@ -182,26 +182,17 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             es_exacto = True
             
             if not df_bonos.empty:
-                exact_bono = df_bonos[(df_bonos['dias_minimo'] <= dias) & (df_bonos['dias_maximo'] >= dias)]
-                if not exact_bono.empty:
-                    best_bono_row = exact_bono.sort_values(by='bono', ascending=False).iloc[0]
+                valid_bonos = df_bonos[df_bonos['dias_minimo'] <= dias]
+                if not valid_bonos.empty:
+                    best_bono_row = valid_bonos.sort_values(by=['dias_minimo', 'bono'], ascending=[False, False]).iloc[0]
                     applied_bono = float(best_bono_row['bono'])
                     applied_dmin = int(best_bono_row['dias_minimo'])
-                    applied_dmax = int(best_bono_row['dias_maximo'])
+                    applied_dmax = int(best_bono_row['dias_maximo']) if float(best_bono_row['dias_maximo']) > 0 else 9999
                     es_exacto = True
                 else:
-                    df_bonos['diff_dias'] = df_bonos['dias_minimo'] - dias
-                    df_tol = df_bonos[(df_bonos['diff_dias'] > 0) & (df_bonos['diff_dias'] <= 10)]
-                    if not df_tol.empty:
-                        best_tol_row = df_tol.sort_values(by='diff_dias', ascending=True).iloc[0]
-                        applied_bono = float(best_tol_row['bono'])
-                        applied_dmin = int(best_tol_row['dias_minimo'])
-                        applied_dmax = int(best_tol_row['dias_maximo'])
-                        es_exacto = False
-                    else:
-                        applied_dmin = 0
-                        applied_dmax = 9999
-                        es_exacto = True
+                    applied_dmin = 0
+                    applied_dmax = 9999
+                    es_exacto = True
             
             tna_total = tna_base + applied_bono
             
