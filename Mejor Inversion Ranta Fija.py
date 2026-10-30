@@ -57,19 +57,6 @@ FILE_ID = "1DPASEKWo7lTbu8tug041iK5lMXLlyJvG"
 DRIVE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xlsx"
 LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
 
-def acortar_entidad(nombre):
-    if pd.isna(nombre) or nombre is None:
-        return ""
-    n = str(nombre).strip()
-    n_lower = n.lower()
-    if "jardin" in n_lower or "jardín" in n_lower:
-        return "Jardín"
-    elif "austro" in n_lower:
-        return "Austro"
-    elif "mutualista" in n_lower or "mutazuay" in n_lower:
-        return "Mutazuay"
-    return n
-
 def limpiar_numeros(serie):
     s = pd.Series(serie).astype(str).str.strip()
     s = s.str.replace(r'[%\$]', '', regex=True)
@@ -290,12 +277,11 @@ def cargar_datos_inversiones():
         except Exception: pass
 
     if xl is None:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     tablas_pf = []
     tablas_ap = []
     tablas_ca = []
-    df_resumen_raw = pd.DataFrame()
 
     BANCOS_AP_VALIDOS = [
         "AUSTRO", "JARDIN AZUAYO", "MACHALA", 
@@ -304,11 +290,6 @@ def cargar_datos_inversiones():
 
     for sheet in xl.sheet_names:
         if sheet == "Tasas Referenciales": continue
-        if sheet == "Resumen":
-            try:
-                df_resumen_raw = pd.read_excel(xl, sheet_name=sheet)
-            except Exception: pass
-            continue
         
         try:
             df_raw = pd.read_excel(xl, sheet_name=sheet, header=None)
@@ -480,7 +461,7 @@ def cargar_datos_inversiones():
     df_final_pf = pd.concat(tablas_pf, ignore_index=True) if tablas_pf else pd.DataFrame()
     df_final_ap = pd.concat(tablas_ap, ignore_index=True) if tablas_ap else pd.DataFrame()
     df_final_ca = pd.concat(tablas_ca, ignore_index=True) if tablas_ca else pd.DataFrame()
-    return df_final_pf, df_final_ap, df_final_ca, df_resumen_raw
+    return df_final_pf, df_final_ap, df_final_ca
 
 @st.cache_data(ttl=3600)
 def cargar_tasas_referenciales():
@@ -500,50 +481,6 @@ def cargar_tasas_referenciales():
     except Exception: pass
     return pd.DataFrame()
 
-def renderizar_tabla_resumen(df):
-    if df.empty:
-        st.info("No hay información disponible para mostrar en la tabla de resumen.")
-        return
-
-    df_proc = df.copy()
-    
-    col_tipo = df_proc.columns[0]
-    col_entidad = df_proc.columns[1] if len(df_proc.columns) > 1 else None
-
-    if col_entidad and col_entidad in df_proc.columns:
-        df_proc[col_tipo] = df_proc.apply(
-            lambda row: f"{row[col_tipo]} ({acortar_entidad(row[col_entidad])})", axis=1
-        )
-        df_proc = df_proc.drop(columns=[col_entidad])
-
-    st.markdown("<h3 style='text-align: center;'>📝 Resumen Todas Las Inversiones</h3>", unsafe_allow_html=True)
-    
-    filtro_opcion = st.radio(
-        "Filtrar detalles por:",
-        ["Todos", "Ahorro Programado", "Ahorros Vista", "AustroFuturo", "Plazo Fijo"],
-        horizontal=True
-    )
-
-    if filtro_opcion != "Todos":
-        df_proc = df_proc[df_proc[col_tipo].str.contains(filtro_opcion, case=False, na=False)]
-
-    html_rows = ""
-    for idx, row in df_proc.iterrows():
-        tipo_fmt = f"<strong>{row[col_tipo]}</strong>"
-        resto_cols = "".join([f"<td>{row[c]}</td>" for c in df_proc.columns if c != col_tipo])
-        html_rows += f"<tr><td>{tipo_fmt}</td>{resto_cols}</tr>"
-
-    headers_html = "".join([f"<th>{c}</th>" for c in df_proc.columns])
-    
-    st.markdown(f"""
-    <div class="table-container">
-        <table class="custom-table">
-            <thead><tr>{headers_html}</tr></thead>
-            <tbody>{html_rows}</tbody>
-        </table>
-    </div>
-    """, unsafe_allow_html=True)
-
 st.markdown("<h1 style='text-align: center;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
 
 col_btn1, col_btn2 = st.columns([3, 1])
@@ -552,12 +489,12 @@ with col_btn2:
         st.cache_data.clear()
         st.rerun()
 
-df_pf, df_ap, df_ca, df_resumen = cargar_datos_inversiones()
-if df_pf.empty and df_ap.empty and df_ca.empty and df_resumen.empty:
+df_pf, df_ap, df_ca = cargar_datos_inversiones()
+if df_pf.empty and df_ap.empty and df_ca.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
     st.stop()
 
-tab_pf, tab_ap, tab_ca, tab_resumen_tab = st.tabs(["💰 Plazo Fijo", "📅 Ahorro Programado", "💳 Cuentas de Ahorros", "📝 Resumen Inversiones"])
+tab_pf, tab_ap, tab_ca = st.tabs(["💰 Plazo Fijo", "📅 Ahorro Programado", "💳 Cuentas de Ahorros"])
 
 with tab_pf:
     st.markdown("<br><h3 style='text-align: center;'>📋 Parámetros de Inversión</h3>", unsafe_allow_html=True)
@@ -758,9 +695,6 @@ with tab_ca:
                         st.download_button(label="📄 Descargar Top 10 en PDF", data=pdf_data_ca, file_name=f"Top_10_CuentasAhorros_${monto_ca}_{dias_ca}dias.pdf", mime="application/pdf", use_container_width=True)
                     else:
                         st.info("💡 Para habilitar la descarga en PDF instala la librería en tu entorno: `pip install fpdf`")
-
-with tab_resumen_tab:
-    renderizar_tabla_resumen(df_resumen)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
