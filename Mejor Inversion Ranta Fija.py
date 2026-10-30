@@ -2,6 +2,7 @@ import sys
 import io
 import datetime
 import os
+import re
 import unicodedata
 import requests
 import pandas as pd
@@ -53,9 +54,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-FILE_ID = "1DPASEKWo7lTbu8tug041iK5lMXLlyJvG"
-DRIVE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xlsx"
-LOCAL_BACKUP_PATH = "Inversiones_Ecuador.xlsx"
+FILE_ID_INVERSIONES = "1DPASEKWo7lTbu8tug041iK5lMXLlyJvG"
+DRIVE_URL_INVERSIONES = f"https://docs.google.com/spreadsheets/d/{FILE_ID_INVERSIONES}/export?format=xlsx"
+LOCAL_BACKUP_INVERSIONES = "Inversiones_Ecuador.xlsx"
+
+FILE_ID_RIESGO = "1ZtmezQ9fQfpUmpRdHa66Fp0j733j5qwv"
+DRIVE_URL_RIESGO = f"https://docs.google.com/spreadsheets/d/{FILE_ID_RIESGO}/export?format=xlsx"
+LOCAL_BACKUP_RIESGO = "Calificaciones_Riesgo.xlsx"
 
 def limpiar_numeros(serie):
     s = pd.Series(serie).astype(str).str.strip()
@@ -83,7 +88,100 @@ def normalizar_texto(texto):
     texto = str(texto).strip().lower()
     return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
 
-def generar_pdf_bytes(df, tipo, monto, dias):
+@st.cache_data(ttl=3600)
+def cargar_calificaciones_riesgo():
+    content = None
+    try:
+        response = requests.get(DRIVE_URL_RIESGO, timeout=15)
+        if response.status_code == 200:
+            content = response.content
+    except Exception:
+        pass
+
+    if content is None and os.path.exists(LOCAL_BACKUP_RIESGO):
+        try:
+            with open(LOCAL_BACKUP_RIESGO, 'rb') as f:
+                content = f.read()
+        except Exception:
+            pass
+
+    if content is None:
+        return {}
+
+    mapping = {}
+
+    try:
+        xl = pd.ExcelFile(io.BytesIO(content))
+        for sheet in xl.sheet_names:
+            df = pd.read_excel(xl, sheet_name=sheet)
+            if df.empty or len(df.columns) < 2: continue
+
+            col_inst = df.columns[0]
+            col_rating = df.columns[-1]
+
+            for _, row in df.iterrows():
+                inst_raw = str(row[col_inst]).strip()
+                rating_raw = str(row[col_rating]).strip()
+                if inst_raw and rating_raw and rating_raw.lower() not in ['nan', 'none', '']:
+                    norm_k = normalizar_texto(inst_raw)
+                    mapping[norm_k] = rating_raw
+        if mapping:
+            return mapping
+    except Exception:
+        pass
+
+    try:
+        txt = content.decode('utf-8', errors='ignore')
+        pattern_split = r'(?=(?:BANCO|COOPERATIVA|CORPORACI[ÓO]N|ASOCIACI[ÓO]N|MUTUALISTA|CAJA|TITULARIZACI[ÓO]N|BANECUADOR|BIESS|FONDO)\b)'
+        entries = re.split(pattern_split, txt)
+        pattern_next_inst = r'\s+(?:BANCO|COOPERATIVA|CORPORACI[ÓO]N|ASOCIACI[ÓO]N|MUTUALISTA|CAJA|TITULARIZACI[ÓO]N|BANECUADOR|BIESS|FONDO)\b.*$'
+
+        for entry in entries:
+            entry = entry.strip()
+            if not entry or "INSTITUCIÓN FINANCIERA" in entry: continue
+
+            parts = [p.strip() for p in entry.split(',')]
+            if len(parts) >= 4:
+                nombre = parts[0]
+                raw_last = parts[-1]
+                rating_clean = re.sub(pattern_next_inst, '', raw_last, flags=re.IGNORECASE).strip()
+
+                if rating_clean and not rating_clean.startswith("http") and len(rating_clean) <= 30:
+                    norm_n = normalizar_texto(nombre)
+                    mapping[norm_n] = rating_clean
+    except Exception:
+        pass
+
+    return mapping
+
+def buscar_calificacion_riesgo(banco_nombre, mapping):
+    if not mapping or not banco_nombre:
+        return "N/A"
+
+    b_norm = normalizar_texto(banco_nombre)
+
+    if "jep" in b_norm:
+        b_norm = "juventud ecuatoriana progresista"
+    elif "cooperco" in b_norm:
+        b_norm = "erco"
+
+    if b_norm in mapping:
+        return mapping[b_norm]
+
+    for k, v in mapping.items():
+        if b_norm in k or k in b_norm:
+            return v
+
+    b_tokens = [t for t in b_norm.split() if t not in ['banco', 'cooperativa', 'de', 'ahorro', 'y', 'credito', 's.a.', 'ltda', 'limitada', 'c.a.', 'n.a.', 'asociacion', 'mutualista']]
+    if b_tokens:
+        tok_str = ' '.join(b_tokens)
+        for k, v in mapping.items():
+            if tok_str in k:
+                return v
+
+    return "N/A"
+
+def generar_pdf_bytes(df, tipo, monto, dias, map_riesgo):
     try:
         from fpdf import FPDF
     except ImportError:
@@ -108,19 +206,20 @@ def generar_pdf_bytes(df, tipo, monto, dias):
         banco = normalizar_texto(str(row['banco'])).upper()
         prod = normalizar_texto(str(row.get('producto', ''))).title()
         tna = f"{row['tna']:.2f}%"
+        calif = buscar_calificacion_riesgo(row['banco'], map_riesgo)
         
         if tipo == 'pf':
             ganancia = f"${row.get('ganancia_estimada', 0):,.2f}"
             rango = f"{int(row['dias_minimo'])} a {int(row['dias_maximo'])} dias"
-            linea1 = f"{idx+1}. {banco}"
+            linea1 = f"{idx+1}. {banco} (Riesgo: {calif})"
             linea2 = f"    Plazo Aplicado: {rango} | TNA: {tna} | Ganancia Estimada: {ganancia}"
         elif tipo == 'ap':
             tea_val = ((1 + (row['tna'] / 1200.0)) ** 12 - 1) * 100.0
-            linea1 = f"{idx+1}. {banco} ({prod})"
+            linea1 = f"{idx+1}. {banco} ({prod}) (Riesgo: {calif})"
             linea2 = f"    TNA: {tna} | TEA: {tea_val:.2f}%"
         elif tipo == 'ca':
             ganancia = f"${row.get('ganancia_estimada', 0):,.2f}"
-            linea1 = f"{idx+1}. {banco} ({prod})"
+            linea1 = f"{idx+1}. {banco} ({prod}) (Riesgo: {calif})"
             linea2 = f"    TNA: {tna} | Ganancia en Periodo: {ganancia}"
             
         pdf.set_font("Arial", 'B', 10)
@@ -259,7 +358,7 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
 def cargar_datos_inversiones():
     content = None
     try:
-        response = requests.get(DRIVE_URL, timeout=15)
+        response = requests.get(DRIVE_URL_INVERSIONES, timeout=15)
         if response.status_code == 200: content = io.BytesIO(response.content)
     except Exception: pass
 
@@ -269,9 +368,9 @@ def cargar_datos_inversiones():
             xl = pd.ExcelFile(content)
         except Exception: pass
 
-    if xl is None and os.path.exists(LOCAL_BACKUP_PATH):
+    if xl is None and os.path.exists(LOCAL_BACKUP_INVERSIONES):
         try:
-            xl = pd.ExcelFile(LOCAL_BACKUP_PATH)
+            xl = pd.ExcelFile(LOCAL_BACKUP_INVERSIONES)
         except Exception: pass
 
     if xl is None:
@@ -466,11 +565,11 @@ def cargar_datos_inversiones():
 def cargar_tasas_referenciales():
     content = None
     try:
-        response = requests.get(DRIVE_URL, timeout=5)
+        response = requests.get(DRIVE_URL_INVERSIONES, timeout=5)
         if response.status_code == 200: content = io.BytesIO(response.content)
     except Exception: pass
     
-    xl_source = content if content is not None else LOCAL_BACKUP_PATH
+    xl_source = content if content is not None else LOCAL_BACKUP_INVERSIONES
     try:
         is_valid_source = isinstance(xl_source, io.BytesIO) or (isinstance(xl_source, str) and os.path.exists(xl_source))
         if is_valid_source:
@@ -489,6 +588,8 @@ with col_btn2:
         st.rerun()
 
 df_pf, df_ap, df_ca = cargar_datos_inversiones()
+map_riesgo = cargar_calificaciones_riesgo()
+
 if df_pf.empty and df_ap.empty and df_ca.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
     st.stop()
@@ -526,6 +627,8 @@ with tab_pf:
                     html_rows = ""
                     for idx, row in resultados_pf.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
+                        calif_riesgo = buscar_calificacion_riesgo(row['banco'], map_riesgo)
+                        calif_fmt = f"<span style='color: #38bdf8; font-weight: bold;'>{calif_riesgo}</span>"
                         
                         if (row['dias_minimo'] == 0 or row['dias_minimo'] == 1) and row['dias_maximo'] == 9999:
                             rango = "Libre / Sin plazo"
@@ -548,12 +651,12 @@ with tab_pf:
                         tna_periodo_str = f"{tna_periodo_val:.2f}%"
 
                         ganancia = f"${row['ganancia_estimada']:,.2f}"
-                        html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+                        html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{calif_fmt}</td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
-                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Calificación<br>de Riesgo</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
 
-                    pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias)
+                    pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias, map_riesgo)
                     if pdf_data:
                         st.download_button(label="📄 Descargar Top 10 en PDF", data=pdf_data, file_name=f"Top_10_PlazoFijo_${monto}_{plazo_dias}dias.pdf", mime="application/pdf", use_container_width=True)
                     else:
@@ -595,6 +698,8 @@ with tab_ap:
                         banco_fmt = formatear_nombre_banco(row['banco'])
                         prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
                         institucion = f"{banco_fmt}<br>{prod_fmt}"
+                        calif_riesgo = buscar_calificacion_riesgo(row['banco'], map_riesgo)
+                        calif_fmt = f"<span style='color: #38bdf8; font-weight: bold;'>{calif_riesgo}</span>"
                         
                         if (row['dias_minimo'] == 0 or row['dias_minimo'] == 1) and row['dias_maximo'] == 9999:
                             rango_dias = "Libre / Sin plazo"
@@ -619,12 +724,12 @@ with tab_ap:
                         tea_periodo_val = ((1 + (tna_val / 1200.0)) ** (12.0 * (dias_ap / 360.0)) - 1) * 100.0
                         tea_periodo_str = f"{tea_periodo_val:.2f}%"
                             
-                        html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tea_periodo_str}</span></td></tr>"
+                        html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{calif_fmt}</td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tea_periodo_str}</span></td></tr>"
 
-                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEA Periodo<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Calificación<br>de Riesgo</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEA Periodo<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
 
-                    pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap)
+                    pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap, map_riesgo)
                     if pdf_data_ap:
                         st.download_button(label="📄 Descargar Top 10 en PDF", data=pdf_data_ap, file_name=f"Top_10_AhorroProgramado_${aporte_ap}_{dias_ap}dias.pdf", mime="application/pdf", use_container_width=True)
                     else:
@@ -666,6 +771,8 @@ with tab_ca:
                         banco_fmt = formatear_nombre_banco(row['banco'])
                         prod_fmt = f"<span style='font-size:11px; color:#94A3B8;'>{str(row['producto']).title()}</span>"
                         institucion = f"{banco_fmt}<br>{prod_fmt}"
+                        calif_riesgo = buscar_calificacion_riesgo(row['banco'], map_riesgo)
+                        calif_fmt = f"<span style='color: #38bdf8; font-weight: bold;'>{calif_riesgo}</span>"
                         
                         rango_saldos = ""
                         if pd.isna(row['monto_maximo']):
@@ -684,12 +791,12 @@ with tab_ca:
 
                         ganancia = f"${row['ganancia_estimada']:,.2f}"
 
-                        html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
+                        html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{calif_fmt}</td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
-                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>TEA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Calificación<br>de Riesgo</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>TEA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
                     st.markdown("<br>", unsafe_allow_html=True)
 
-                    pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca)
+                    pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca, map_riesgo)
                     if pdf_data_ca:
                         st.download_button(label="📄 Descargar Top 10 en PDF", data=pdf_data_ca, file_name=f"Top_10_CuentasAhorros_${monto_ca}_{dias_ca}dias.pdf", mime="application/pdf", use_container_width=True)
                     else:
