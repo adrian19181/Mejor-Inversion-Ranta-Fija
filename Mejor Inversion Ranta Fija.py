@@ -507,8 +507,8 @@ def renderizar_tabla_resumen(df):
 
     df_proc = df.copy()
     
-    col_tipo = next((c for c in df_proc.columns if 'tipo' in normalizar_texto(c)), df_proc.columns[0])
-    col_entidad = next((c for c in df_proc.columns if 'entidad' in normalizar_texto(c) or 'banco' in normalizar_texto(c)), df_proc.columns[1] if len(df_proc.columns) > 1 else None)
+    col_tipo = df_proc.columns[0]
+    col_entidad = df_proc.columns[1] if len(df_proc.columns) > 1 else None
 
     if col_entidad and col_entidad in df_proc.columns:
         df_proc[col_tipo] = df_proc.apply(
