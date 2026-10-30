@@ -182,17 +182,28 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
             es_exacto = True
             
             if not df_bonos.empty:
-                valid_bonos = df_bonos[df_bonos['dias_minimo'] <= dias]
-                if not valid_bonos.empty:
-                    best_bono_row = valid_bonos.sort_values(by=['dias_minimo', 'bono'], ascending=[False, False]).iloc[0]
+                exact_bono = df_bonos[(df_bonos['dias_minimo'] <= dias) & (df_bonos['dias_maximo'] >= dias)]
+                if not exact_bono.empty:
+                    best_bono_row = exact_bono.iloc[0]
                     applied_bono = float(best_bono_row['bono'])
                     applied_dmin = int(best_bono_row['dias_minimo'])
                     applied_dmax = int(best_bono_row['dias_maximo']) if float(best_bono_row['dias_maximo']) > 0 else 9999
                     es_exacto = True
                 else:
-                    applied_dmin = 0
-                    applied_dmax = 9999
-                    es_exacto = True
+                    df_bonos['distancia_dias'] = df_bonos.apply(
+                        lambda row: min(abs(dias - row['dias_minimo']), abs(dias - row['dias_maximo'])), axis=1
+                    )
+                    min_dist = df_bonos['distancia_dias'].min()
+                    if min_dist <= 10:
+                        closest_bono_row = df_bonos[df_bonos['distancia_dias'] == min_dist].iloc[0]
+                        applied_bono = float(closest_bono_row['bono'])
+                        applied_dmin = int(closest_bono_row['dias_minimo'])
+                        applied_dmax = int(closest_bono_row['dias_maximo']) if float(closest_bono_row['dias_maximo']) > 0 else 9999
+                        es_exacto = False
+                    else:
+                        applied_dmin = int(row_monto['dias_minimo']) if 'dias_minimo' in row_monto and pd.notna(row_monto['dias_minimo']) else 0
+                        applied_dmax = int(row_monto['dias_maximo']) if 'dias_maximo' in row_monto and pd.notna(row_monto['dias_maximo']) else 9999
+                        es_exacto = True
             
             tna_total = tna_base + applied_bono
             
