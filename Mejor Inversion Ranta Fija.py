@@ -218,10 +218,6 @@ def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
         if df_monto_valido.empty:
             continue
         
-        min_dias_banco = df_monto_valido['dias_minimo'].min()
-        if pd.notna(min_dias_banco) and dias < min_dias_banco:
-            continue
-        
         exact_dias = df_monto_valido[(df_monto_valido['dias_minimo'] <= dias) & (df_monto_valido['dias_maximo'] >= dias)]
         
         if not exact_dias.empty:
@@ -276,7 +272,7 @@ def cargar_datos_inversiones():
 
     BANCOS_AP_VALIDOS = [
         "AUSTRO", "JARDIN AZUAYO", "MACHALA", 
-        "PRODUBANCO", "29 DE OCTUBRE", "COOPERCO", "JEP", "SOLIDARIO"
+        "PRODUBANCO", "29 DE OCTUBRE", "COOPERCO", "JEP", "SOLIDARIO", "ALIANZA"
     ]
 
     for sheet in xl.sheet_names:
@@ -385,6 +381,7 @@ def cargar_datos_inversiones():
                     elif "MACHALA" in banco_norm: prod_name = "Ahorro Programado"
                     elif "29 DE OCTUBRE" in banco_norm: prod_name = "Ahorro Programado"
                     elif "COOPERCO" in banco_norm: prod_name = "Ahorro Programado"
+                    elif "ALIANZA" in banco_norm: prod_name = "Ahorro Programado"
 
                     temp_df = pd.DataFrame({
                         'banco': sheet,
