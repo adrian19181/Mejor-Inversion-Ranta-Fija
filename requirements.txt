@@ -2,6 +2,6 @@ streamlit
 pandas
 requests
 openpyxl
-numpy
 plotly
 fpdf
+pyarrow<25
