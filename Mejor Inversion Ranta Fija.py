@@ -57,14 +57,14 @@ st.markdown("""
     .kpi-title-compact { color: #94A3B8; font-size: 11px; font-weight: 600; margin-bottom: 4px; line-height: 1.2; }
     .kpi-value-compact { font-size: 22px; font-weight: 800; line-height: 1.1; }
 
-    /* BOTONES SUPERIORES UNIFICADOS */
+    /* BOTONES UNIFICADOS ESTILO EXCEL / PREMIUM */
     div[data-testid="stButton"] > button, .stDownloadButton > button {
         background-color: #1E222B !important;
         border: 1.5px solid #107C41 !important;
         border-radius: 8px !important;
         padding: 0.4rem 0.6rem !important;
         width: 100% !important; 
-        font-size: 0.78rem !important;
+        font-size: 0.85rem !important;
         font-weight: 700 !important;
     }
     div[data-testid="stButton"] > button *, .stDownloadButton > button * {
@@ -78,114 +78,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# ==============================================================================
-# FUNCIÓN GENERADORA DE PDF CACHEADA (OPTIMIZA VELOCIDAD DE CARGA)
-# ==============================================================================
-@st.cache_data(ttl=600)
-def generar_pdf_reporte_cached(datos_pf_top, datos_ap_top, datos_ca_top, monto_sim=None, dias_sim=None):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        rightMargin=30,
-        leftMargin=30,
-        topMargin=30,
-        bottomMargin=30
-    )
-    story = []
-    styles = getSampleStyleSheet()
-
-    style_title = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=17, textColor=colors.HexColor('#1F2937'), spaceAfter=3)
-    style_sub = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=8.5, leading=10, textColor=colors.HexColor('#4B5563'), spaceAfter=8)
-    style_h2 = ParagraphStyle('DocH2', parent=styles['Heading2'], fontSize=10.5, leading=12, textColor=colors.HexColor('#1E3A8A'), spaceBefore=6, spaceAfter=3)
-    style_cell = ParagraphStyle('DocCell', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=colors.HexColor('#000000'), alignment=1)
-    style_cell_left = ParagraphStyle('DocCellLeft', parent=style_cell, alignment=0)
-    style_cell_bold = ParagraphStyle('DocCellBold', parent=style_cell, fontName='Helvetica-Bold')
-    style_cell_header = ParagraphStyle('DocCellHeader', parent=style_cell, fontName='Helvetica-Bold', textColor=colors.white, alignment=1)
-
-    fecha_hoy = datetime.date.today().strftime('%d/%m/%Y')
-    story.append(Paragraph("💰 Reporte de Mejor Inversión Renta Fija", style_title))
-    
-    sub_txt = f"Comparativa Consolidada de Tasas y Rendimientos de Renta Fija | Fecha: {fecha_hoy}"
-    if monto_sim and dias_sim:
-        sub_txt += f" | Simulación: ${monto_sim:,.2f} a {dias_sim} días"
-    story.append(Paragraph(sub_txt, style_sub))
-
-    # 1. TOP PLAZO FIJO
-    if datos_pf_top:
-        story.append(Paragraph("📌 1. Top Opciones Plazo Fijo", style_h2))
-        headers = ["Institución", "Riesgo", "Plazo", "TNA", "Ganancia Est."]
-        t_pf_data = [[Paragraph(str(h), style_cell_header) for h in headers]]
-        for r in datos_pf_top:
-            t_pf_data.append([
-                Paragraph(str(r[0]), style_cell_left),
-                Paragraph(str(r[1]), style_cell),
-                Paragraph(str(r[2]), style_cell),
-                Paragraph(str(r[3]), style_cell_bold),
-                Paragraph(str(r[4]), style_cell_bold)
-            ])
-        t_pf = Table(t_pf_data, colWidths=[160, 60, 110, 80, 142])
-        t_pf.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1F2937')),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#000000')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 2.5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
-        ]))
-        story.append(t_pf)
-        story.append(Spacer(1, 6))
-
-    # 2. TOP AHORRO PROGRAMADO
-    if datos_ap_top:
-        story.append(Paragraph("📅 2. Top Opciones Ahorro Programado", style_h2))
-        headers = ["Institución / Producto", "Riesgo", "Plazo", "TNA", "TEA"]
-        t_ap_data = [[Paragraph(str(h), style_cell_header) for h in headers]]
-        for r in datos_ap_top:
-            t_ap_data.append([
-                Paragraph(str(r[0]), style_cell_left),
-                Paragraph(str(r[1]), style_cell),
-                Paragraph(str(r[2]), style_cell),
-                Paragraph(str(r[3]), style_cell_bold),
-                Paragraph(str(r[4]), style_cell_bold)
-            ])
-        t_ap = Table(t_ap_data, colWidths=[170, 60, 110, 106, 106])
-        t_ap.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#059669')),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#000000')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 2.5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
-        ]))
-        story.append(t_ap)
-        story.append(Spacer(1, 6))
-
-    # 3. TOP CUENTAS DE AHORROS
-    if datos_ca_top:
-        story.append(Paragraph("💳 3. Top Cuentas de Ahorros", style_h2))
-        headers = ["Institución / Producto", "Riesgo", "Rango Saldos", "TNA", "TEA"]
-        t_ca_data = [[Paragraph(str(h), style_cell_header) for h in headers]]
-        for r in datos_ca_top:
-            t_ca_data.append([
-                Paragraph(str(r[0]), style_cell_left),
-                Paragraph(str(r[1]), style_cell),
-                Paragraph(str(r[2]), style_cell),
-                Paragraph(str(r[3]), style_cell_bold),
-                Paragraph(str(r[4]), style_cell_bold)
-            ])
-        t_ca = Table(t_ca_data, colWidths=[170, 60, 110, 106, 106])
-        t_ca.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#000000')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 2.5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
-        ]))
-        story.append(t_ca)
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue()
 
 FILE_ID_INVERSIONES = "1DPASEKWo7lTbu8tug041iK5lMXLlyJvG"
 DRIVE_URL_INVERSIONES = f"https://docs.google.com/spreadsheets/d/{FILE_ID_INVERSIONES}/export?format=xlsx"
@@ -323,67 +215,178 @@ def buscar_calificacion_riesgo(banco_nombre, mapping):
 
     return "N/A"
 
-def generar_pdf_bytes(df, tipo, monto, dias, map_riesgo):
-    if df is None or df.empty:
+# ==============================================================================
+# FUNCIÓN GENERADORA DE PDF DINÁMICA DE ENTRADAS + TABLA DE RESULTADOS
+# ==============================================================================
+def generar_pdf_dinamico(resultados_df, tipo, monto, dias, map_riesgo):
+    if resultados_df is None or resultados_df.empty:
         return None
-    
-    top_items = []
-    for idx, row in df.head(10).iterrows():
-        banco = str(row['banco']).strip()
-        calif = buscar_calificacion_riesgo(row['banco'], map_riesgo)
-        tna = f"{row['tna']:.2f}%"
-        
-        if tipo == 'pf':
-            rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} d" if row['dias_minimo'] != row['dias_maximo'] else f"{int(row['dias_minimo'])} d"
-            ganancia = f"${row.get('ganancia_estimada', 0):,.2f}"
-            top_items.append((banco, calif, rango, tna, ganancia))
-        elif tipo == 'ap':
-            prod = str(row.get('producto', '')).title()
-            banco_prod = f"{banco} ({prod})" if prod else banco
-            rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} d" if row['dias_minimo'] != row['dias_maximo'] else f"{int(row['dias_minimo'])} d"
-            tea_val = ((1 + (row['tna'] / 1200.0)) ** 12 - 1) * 100.0
-            top_items.append((banco_prod, calif, rango, tna, f"{tea_val:.2f}%"))
-        elif tipo == 'ca':
-            prod = str(row.get('producto', '')).title()
-            banco_prod = f"{banco} ({prod})" if prod else banco
-            rango_saldos = f"Desde ${float(row['monto_minimo']):,.0f}" if pd.isna(row['monto_maximo']) else f"${float(row['monto_minimo']):,.0f} - ${float(row['monto_maximo']):,.0f}"
-            tea_val = ((1 + (row['tna'] / 1200.0)) ** 12 - 1) * 100.0
-            top_items.append((banco_prod, calif, rango_saldos, tna, f"{tea_val:.2f}%"))
-            
-    if tipo == 'pf':
-        return generar_pdf_reporte_cached(tuple(top_items), None, None, monto, dias)
-    elif tipo == 'ap':
-        return generar_pdf_reporte_cached(None, tuple(top_items), None, monto, dias)
-    elif tipo == 'ca':
-        return generar_pdf_reporte_cached(None, None, tuple(top_items), monto, dias)
-    return None
 
-def extraer_top_pdf_tuple(df, map_riesgo, tipo='pf'):
-    if df is None or df.empty:
-        return []
-    res = []
-    df_sorted = df.sort_values(by='tna', ascending=False).drop_duplicates(subset=['banco']).head(10)
-    for idx, row in df_sorted.iterrows():
-        banco = str(row['banco']).strip()
-        calif = buscar_calificacion_riesgo(row['banco'], map_riesgo)
-        tna = f"{row['tna']:.2f}%"
-        if tipo == 'pf':
-            rango = f"{int(row.get('dias_minimo', 1))} - {int(row.get('dias_maximo', 360))} d"
-            ganancia = "-"
-            res.append((banco, calif, rango, tna, ganancia))
-        elif tipo == 'ap':
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=30,
+        bottomMargin=30
+    )
+    story = []
+    styles = getSampleStyleSheet()
+
+    style_title = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=17, textColor=colors.HexColor('#0F172A'), alignment=1, spaceAfter=2)
+    style_sub = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=8.5, leading=10, textColor=colors.HexColor('#475569'), alignment=1, spaceAfter=8)
+    style_h2 = ParagraphStyle('DocH2', parent=styles['Heading2'], fontSize=10.5, leading=12, textColor=colors.HexColor('#1E293B'), spaceBefore=6, spaceAfter=4)
+    style_cell = ParagraphStyle('DocCell', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=colors.HexColor('#0F172A'), alignment=1)
+    style_cell_left = ParagraphStyle('DocCellLeft', parent=style_cell, alignment=0)
+    style_cell_bold = ParagraphStyle('DocCellBold', parent=style_cell, fontName='Helvetica-Bold')
+    style_cell_header = ParagraphStyle('DocCellHeader', parent=style_cell, fontName='Helvetica-Bold', textColor=colors.white, alignment=1)
+
+    titulos_tipo = {
+        'pf': ("Reporte - Mejores Inversiones a Plazo Fijo", "Capital a Invertir ($ USD)", "Plazo deseado (Días)"),
+        'ap': ("Reporte - Mejores Opciones de Ahorro Programado", "Aporte Mensual / Apertura ($ USD)", "Plazo a cumplir (Días)"),
+        'ca': ("Reporte - Mejores Cuentas de Ahorros", "Saldo Promedio a Mantener ($ USD)", "Plazo a simular (Días)")
+    }
+
+    titulo_txt, label_monto, label_dias = titulos_tipo.get(tipo, ("Reporte de Inversiones", "Monto", "Plazo"))
+    fecha_hoy = datetime.date.today().strftime('%d/%m/%Y')
+
+    story.append(Paragraph(f"💰 {titulo_txt}", style_title))
+    story.append(Paragraph(f"Fecha de generación: {fecha_hoy}", style_sub))
+
+    # --- DATOS DE ENTRADA DEL FORMULARIO ---
+    story.append(Paragraph("📋 Parámetros de Entrada del Formulario", style_h2))
+    input_data = [
+        [Paragraph(f"<b>{label_monto}:</b> ${monto:,.2f}", style_cell_left), Paragraph(f"<b>{label_dias}:</b> {dias} días", style_cell_left)]
+    ]
+    t_input = Table(input_data, colWidths=[270, 270])
+    t_input.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F1F5F9')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+    ]))
+    story.append(t_input)
+    story.append(Spacer(1, 8))
+
+    # --- TABLA COMPLETA GENERADA ---
+    story.append(Paragraph("🏆 Tabla de Resultados Generada", style_h2))
+
+    if tipo == 'pf':
+        headers = ["Institución Financiera", "Calificación de Riesgo", "Rango Plazo Aplicado", "TNA (%)", "TNA Periodo (%)", "Ganancia Estimada ($)"]
+        col_widths = [130, 75, 95, 60, 85, 95]
+        table_rows = [[Paragraph(h, style_cell_header) for h in headers]]
+
+        for idx, row in resultados_df.iterrows():
+            banco = str(row['banco']).strip()
+            calif = buscar_calificacion_riesgo(banco, map_riesgo)
+            
+            if (row['dias_minimo'] in [0, 1]) and row['dias_maximo'] == 9999:
+                rango = "Libre / Sin plazo"
+            elif row['dias_minimo'] == row['dias_maximo']:
+                rango = f"{int(row['dias_minimo'])} días"
+            else:
+                rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+            if not row.get('es_exacto', True):
+                rango += " (Más cercano)"
+
+            tna_val = float(row['tna'])
+            tna_periodo_val = tna_val * (dias / 360.0)
+            ganancia_val = float(row.get('ganancia_estimada', 0))
+
+            table_rows.append([
+                Paragraph(banco, style_cell_left),
+                Paragraph(calif, style_cell),
+                Paragraph(rango, style_cell),
+                Paragraph(f"{tna_val:.2f}%", style_cell_bold),
+                Paragraph(f"{tna_periodo_val:.2f}%", style_cell),
+                Paragraph(f"${ganancia_val:,.2f}", style_cell_bold)
+            ])
+
+    elif tipo == 'ap':
+        headers = ["Institución / Producto", "Calificación de Riesgo", "Rango Plazo Aplicado", "TNA (%)", "TEA (%)", "TEA Periodo (%)"]
+        col_widths = [140, 75, 95, 65, 80, 85]
+        table_rows = [[Paragraph(h, style_cell_header) for h in headers]]
+
+        for idx, row in resultados_df.iterrows():
+            banco = str(row['banco']).strip()
             prod = str(row.get('producto', '')).title()
-            banco_prod = f"{banco} ({prod})" if prod else banco
-            rango = f"{int(row.get('dias_minimo', 0))} - {int(row.get('dias_maximo', 360))} d"
-            tea_val = ((1 + (row['tna'] / 1200.0)) ** 12 - 1) * 100.0
-            res.append((banco_prod, calif, rango, tna, f"{tea_val:.2f}%"))
-        elif tipo == 'ca':
+            inst = f"{banco}<br/><font size=6.5 color='#475569'>{prod}</font>" if prod else banco
+            calif = buscar_calificacion_riesgo(banco, map_riesgo)
+
+            if (row['dias_minimo'] in [0, 1]) and row['dias_maximo'] == 9999:
+                rango = "Libre / Sin plazo"
+            elif row['dias_minimo'] == row['dias_maximo']:
+                rango = f"{int(row['dias_minimo'])} días"
+            else:
+                rango = f"{int(row['dias_minimo'])} - {int(row['dias_maximo'])} días"
+            if not row.get('es_exacto', True):
+                rango += " (Más cercano)"
+
+            tna_val = float(row['tna'])
+            tea_val = ((1 + (tna_val / 1200.0)) ** 12 - 1) * 100.0
+            tea_periodo_val = ((1 + (tna_val / 1200.0)) ** (12.0 * (dias / 360.0)) - 1) * 100.0
+
+            table_rows.append([
+                Paragraph(inst, style_cell_left),
+                Paragraph(calif, style_cell),
+                Paragraph(rango, style_cell),
+                Paragraph(f"{tna_val:.2f}%", style_cell_bold),
+                Paragraph(f"{tea_val:.2f}%", style_cell),
+                Paragraph(f"{tea_periodo_val:.2f}%", style_cell_bold)
+            ])
+
+    elif tipo == 'ca':
+        headers = ["Institución / Producto", "Calificación de Riesgo", "Rango de Saldos Aplicado", "TNA (%)", "TNA Periodo (%)", "TEA (%)", "Ganancia Estimada ($)"]
+        col_widths = [115, 65, 95, 55, 65, 60, 85]
+        table_rows = [[Paragraph(h, style_cell_header) for h in headers]]
+
+        for idx, row in resultados_df.iterrows():
+            banco = str(row['banco']).strip()
             prod = str(row.get('producto', '')).title()
-            banco_prod = f"{banco} ({prod})" if prod else banco
-            rango_saldos = f"Desde ${float(row.get('monto_minimo', 0)):,.0f}" if pd.isna(row.get('monto_maximo')) else f"${float(row.get('monto_minimo', 0)):,.0f} - ${float(row.get('monto_maximo', 0)):,.0f}"
-            tea_val = ((1 + (row['tna'] / 1200.0)) ** 12 - 1) * 100.0
-            res.append((banco_prod, calif, rango_saldos, tna, f"{tea_val:.2f}%"))
-    return res
+            inst = f"{banco}<br/><font size=6.5 color='#475569'>{prod}</font>" if prod else banco
+            calif = buscar_calificacion_riesgo(banco, map_riesgo)
+
+            if pd.isna(row['monto_maximo']):
+                rango_saldos = f"Desde ${float(row['monto_minimo']):,.2f}"
+            else:
+                rango_saldos = f"${float(row['monto_minimo']):,.2f} - ${float(row['monto_maximo']):,.2f}"
+
+            tna_val = float(row['tna'])
+            tna_periodo_val = tna_val * (dias / 360.0)
+            tea_val = ((1 + (tna_val / 1200.0)) ** 12 - 1) * 100.0
+            ganancia_val = float(row.get('ganancia_estimada', 0))
+
+            table_rows.append([
+                Paragraph(inst, style_cell_left),
+                Paragraph(calif, style_cell),
+                Paragraph(rango_saldos, style_cell),
+                Paragraph(f"{tna_val:.2f}%", style_cell_bold),
+                Paragraph(f"{tna_periodo_val:.2f}%", style_cell),
+                Paragraph(f"{tea_val:.2f}%", style_cell),
+                Paragraph(f"${ganancia_val:,.2f}", style_cell_bold)
+            ])
+
+    t_results = Table(table_rows, colWidths=col_widths)
+    t_results.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E293B')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3.5),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
+    ]))
+
+    story.append(t_results)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def generar_pdf_bytes(df, tipo, monto, dias, map_riesgo):
+    return generar_pdf_dinamico(df, tipo, monto, dias, map_riesgo)
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
     if df.empty or monto <= 0 or dias <= 0:
@@ -729,36 +732,19 @@ def cargar_tasas_referenciales():
     except Exception: pass
     return pd.DataFrame()
 
-df_pf, df_ap, df_ca = cargar_datos_inversiones()
-map_riesgo = cargar_calificaciones_riesgo()
-
-# Pre-generación de PDF General Consolidado (Top 10 de cada categoría)
-top_pf_gen = tuple(extraer_top_pdf_tuple(df_pf, map_riesgo, tipo='pf')) if not df_pf.empty else None
-top_ap_gen = tuple(extraer_top_pdf_tuple(df_ap, map_riesgo, tipo='ap')) if not df_ap.empty else None
-top_ca_gen = tuple(extraer_top_pdf_tuple(df_ca, map_riesgo, tipo='ca')) if not df_ca.empty else None
-
-pdf_bytes_general = generar_pdf_reporte_cached(top_pf_gen, top_ap_gen, top_ca_gen)
-
 # ---------------------------------------------------------
-# CABECERA & BOTONES SUPERIORES (REFRESCAR Y PDF)
+# INTERFAZ PRINCIPAL
 # ---------------------------------------------------------
-header_col1, header_col2, header_col3 = st.columns([2.2, 1.1, 1.2], vertical_alignment="center")
-with header_col1:
-    st.markdown("<h3 style='margin: 0; color: #FFFFFF !important;'>💰 Mejor Inversión Renta Fija</h3>", unsafe_allow_html=True)
-with header_col2:
+col_title, col_btn_act = st.columns([3, 1], vertical_alignment="center")
+with col_title:
+    st.markdown("<h1 style='text-align: center; margin: 0;'>Mejor Inversión Renta Fija</h1>", unsafe_allow_html=True)
+with col_btn_act:
     if st.button("🔄 Actualizar", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-with header_col3:
-    st.download_button(
-        label="📄 Exportar a PDF",
-        data=pdf_bytes_general,
-        file_name="Mejor Inversion.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
 
-st.markdown("---")
+df_pf, df_ap, df_ca = cargar_datos_inversiones()
+map_riesgo = cargar_calificaciones_riesgo()
 
 if df_pf.empty and df_ap.empty and df_ca.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
@@ -828,7 +814,7 @@ with tab_pf:
 
                     pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias, map_riesgo)
                     if pdf_data:
-                        st.download_button(label="📄 Descargar PDF (Plazo Fijo)", data=pdf_data, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
+                        st.download_button(label="📄 Exportar a PDF", data=pdf_data, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
 
 with tab_ap:
     if df_ap.empty:
@@ -899,7 +885,7 @@ with tab_ap:
 
                     pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap, map_riesgo)
                     if pdf_data_ap:
-                        st.download_button(label="📄 Descargar PDF (Ahorro Programado)", data=pdf_data_ap, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
+                        st.download_button(label="📄 Exportar a PDF", data=pdf_data_ap, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
 
 with tab_ca:
     if df_ca.empty:
@@ -964,7 +950,7 @@ with tab_ca:
 
                     pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca, map_riesgo)
                     if pdf_data_ca:
-                        st.download_button(label="📄 Descargar PDF (Cuentas Ahorros)", data=pdf_data_ca, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
+                        st.download_button(label="📄 Exportar a PDF", data=pdf_data_ca, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
