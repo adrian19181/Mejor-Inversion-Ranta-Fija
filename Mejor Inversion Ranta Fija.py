@@ -365,7 +365,7 @@ def generar_pdf_dinamico(resultados_df, tipo, monto, dias, map_riesgo):
                 Paragraph(rango_saldos, style_cell),
                 Paragraph(f"{tna_val:.2f}%", style_cell_bold),
                 Paragraph(f"{tna_periodo_val:.2f}%", style_cell),
-                Paragraph(f"{tea_val:.2f}%", style_cell),
+                Paragraph(f"${tea_val:.2f}%", style_cell),
                 Paragraph(f"${ganancia_val:,.2f}", style_cell_bold)
             ])
 
@@ -780,6 +780,11 @@ with tab_pf:
                     ganador = resultados_pf.iloc[0]
                     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tna']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
+                    pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias, map_riesgo)
+                    if pdf_data:
+                        st.download_button(label="📄 Exportar a PDF", data=pdf_data, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
+                        st.markdown("<br>", unsafe_allow_html=True)
+
                     html_rows = ""
                     for idx, row in resultados_pf.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
@@ -810,11 +815,6 @@ with tab_pf:
                         html_rows += f"<tr><td><strong>{banco_fmt}</strong></td><td>{calif_fmt}</td><td>{rango}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución<br>Financiera</th><th>Calificación<br>de Riesgo</th><th>Rango Plazo<br>Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows}</tbody></table></div>""", unsafe_allow_html=True)
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                    pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias, map_riesgo)
-                    if pdf_data:
-                        st.download_button(label="📄 Exportar a PDF", data=pdf_data, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
 
 with tab_ap:
     if df_ap.empty:
@@ -846,6 +846,11 @@ with tab_ap:
                     ganador_ap = resultados_ap.iloc[0]
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
+
+                    pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap, map_riesgo)
+                    if pdf_data_ap:
+                        st.download_button(label="📄 Exportar a PDF", data=pdf_data_ap, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
+                        st.markdown("<br>", unsafe_allow_html=True)
 
                     html_rows_ap = ""
                     for idx, row in resultados_ap.iterrows():
@@ -881,11 +886,6 @@ with tab_ap:
                         html_rows_ap += f"<tr><td><strong>{institucion}</strong></td><td>{calif_fmt}</td><td>{rango_dias}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tea_periodo_str}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Calificación<br>de Riesgo</th><th>Rango de<br>Plazo Aplicado</th><th>TNA<br>(%)</th><th>TEA<br>(%)</th><th>TEA Periodo<br>(%)</th></tr></thead><tbody>{html_rows_ap}</tbody></table></div>""", unsafe_allow_html=True)
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                    pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap, map_riesgo)
-                    if pdf_data_ap:
-                        st.download_button(label="📄 Exportar a PDF", data=pdf_data_ap, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
 
 with tab_ca:
     if df_ca.empty:
@@ -918,6 +918,11 @@ with tab_ca:
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ca['banco']} ({str(ganador_ca['producto']).title()})** con una TNA de **{ganador_ca['tna']:.2f}%** y una ganancia estimada de **${ganador_ca['ganancia_estimada']:,.2f}**")
 
+                    pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca, map_riesgo)
+                    if pdf_data_ca:
+                        st.download_button(label="📄 Exportar a PDF", data=pdf_data_ca, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
+                        st.markdown("<br>", unsafe_allow_html=True)
+
                     html_rows_ca = ""
                     for idx, row in resultados_ca.iterrows():
                         banco_fmt = formatear_nombre_banco(row['banco'])
@@ -946,11 +951,6 @@ with tab_ca:
                         html_rows_ca += f"<tr><td><strong>{institucion}</strong></td><td>{calif_fmt}</td><td>{rango_saldos}</td><td><span style='color: #22c55e; font-weight: bold;'>{tna}</span></td><td><span style='color: #f59e0b; font-weight: bold;'>{tna_periodo_str}</span></td><td><span style='color: #38bdf8; font-weight: bold;'>{tea_str}</span></td><td><span style='color: #3b82f6; font-weight: bold;'>{ganancia}</span></td></tr>"
 
                     st.markdown(f"""<div class="table-container"><table class="custom-table"><thead><tr><th>Institución /<br>Producto</th><th>Calificación<br>de Riesgo</th><th>Rango de<br>Saldos Aplicado</th><th>TNA<br>(%)</th><th>TNA Periodo<br>(%)</th><th>TEA<br>(%)</th><th>Ganancia<br>Estimada ($)</th></tr></thead><tbody>{html_rows_ca}</tbody></table></div>""", unsafe_allow_html=True)
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                    pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca, map_riesgo)
-                    if pdf_data_ca:
-                        st.download_button(label="📄 Exportar a PDF", data=pdf_data_ca, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
 
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
