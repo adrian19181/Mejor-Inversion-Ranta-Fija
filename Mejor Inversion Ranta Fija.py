@@ -215,10 +215,81 @@ def buscar_calificacion_riesgo(banco_nombre, mapping):
 
     return "N/A"
 
+def obtener_metricas_referenciales(df_ref):
+    if df_ref is None or df_ref.empty or len(df_ref.columns) < 2:
+        return None
+
+    df_temp = df_ref.copy()
+    df_temp['fecha_dt'] = pd.to_datetime(df_temp.iloc[:, 0], dayfirst=True, errors='coerce')
+    df_temp['tasa_val'] = limpiar_numeros(df_temp.iloc[:, 1])
+    df_validos = df_temp.dropna(subset=['fecha_dt', 'tasa_val']).sort_values('fecha_dt')
+    if df_validos.empty:
+        return None
+
+    fecha_actual = datetime.datetime.now()
+    df_mes_actual = df_validos[(df_validos['fecha_dt'].dt.year == fecha_actual.year) & (df_validos['fecha_dt'].dt.month == fecha_actual.month)]
+    
+    tasa_actual = df_mes_actual.iloc[-1]['tasa_val'] if not df_mes_actual.empty else df_validos.iloc[-1]['tasa_val']
+    fecha_kpi = df_mes_actual.iloc[-1]['fecha_dt'] if not df_mes_actual.empty else df_validos.iloc[-1]['fecha_dt']
+
+    meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    etiqueta_mes = f"{meses_nombres[fecha_kpi.month - 1]} {fecha_kpi.year}"
+    tasa_promedio_anio = df_validos[df_validos['fecha_dt'].dt.year == fecha_kpi.year]['tasa_val'].mean()
+
+    max_idx = df_validos['tasa_val'].idxmax()
+    min_idx = df_validos['tasa_val'].idxmin()
+    row_max = df_validos.loc[max_idx]
+    row_min = df_validos.loc[min_idx]
+
+    tasa_max = row_max['tasa_val']
+    fecha_max = f"{meses_nombres[row_max['fecha_dt'].month - 1]} {row_max['fecha_dt'].year}"
+    tasa_min = row_min['tasa_val']
+    fecha_min = f"{meses_nombres[row_min['fecha_dt'].month - 1]} {row_min['fecha_dt'].year}"
+    tasa_prom = df_validos['tasa_val'].mean()
+
+    df_mensual = df_validos.copy()
+    df_mensual['year_month'] = df_mensual['fecha_dt'].dt.strftime('%Y-%m')
+    df_serie = df_mensual.groupby('year_month')['tasa_val'].last().values
+
+    tasa_1m, rango_1m, tendencia_str, rango_3m = None, None, None, None
+    if len(df_serie) >= 3:
+        y = df_serie[-12:]
+        n = len(y)
+        x = np.arange(1, n + 1)
+        slope, intercept = np.polyfit(x, y, 1)
+        pred_1 = slope * (n + 1) + intercept
+        pred_3 = slope * (n + 3) + intercept
+        residuals = y - (slope * x + intercept)
+        se = np.sqrt(np.sum(residuals**2) / (n - 2)) if n > 2 else 0
+        ci_95 = 1.96 * se
+        margen_1 = max(0.05, ci_95)
+
+        tasa_1m = max(0, pred_1)
+        rango_1m = f"[{max(0, tasa_1m - margen_1):.2f}% - {tasa_1m + margen_1:.2f}%]"
+        tasa_3m = max(0, pred_3)
+        tendencia_str = "Alza" if slope > 0.015 else ("Baja" if slope < -0.015 else "Estable")
+        rango_3m = f"[{max(0, min(tasa_1m, tasa_3m) - margen_1):.2f}% - {max(tasa_1m, tasa_3m) + margen_1:.2f}%]"
+
+    return {
+        'tasa_actual': tasa_actual,
+        'etiqueta_mes': etiqueta_mes,
+        'tasa_promedio_anio': tasa_promedio_anio,
+        'anio_kpi': fecha_kpi.year,
+        'tasa_max': tasa_max,
+        'fecha_max': fecha_max,
+        'tasa_min': tasa_min,
+        'fecha_min': fecha_min,
+        'tasa_prom': tasa_prom,
+        'tasa_1m': tasa_1m,
+        'rango_1m': rango_1m,
+        'tendencia_str': tendencia_str,
+        'rango_3m': rango_3m
+    }
+
 # ==============================================================================
-# FUNCIÓN GENERADORA DE PDF DINÁMICA DE ENTRADAS + TABLA DE RESULTADOS
+# FUNCIÓN GENERADORA DE PDF DINÁMICA CON TABLAS REFERENCIALES
 # ==============================================================================
-def generar_pdf_dinamico(resultados_df, tipo, monto, dias, map_riesgo):
+def generar_pdf_dinamico(resultados_df, tipo, monto, dias, map_riesgo, datos_ref=None):
     if resultados_df is None or resultados_df.empty:
         return None
 
@@ -236,7 +307,7 @@ def generar_pdf_dinamico(resultados_df, tipo, monto, dias, map_riesgo):
 
     style_title = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=17, textColor=colors.HexColor('#0F172A'), alignment=1, spaceAfter=2)
     style_sub = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=8.5, leading=10, textColor=colors.HexColor('#475569'), alignment=1, spaceAfter=8)
-    style_h2 = ParagraphStyle('DocH2', parent=styles['Heading2'], fontSize=10.5, leading=12, textColor=colors.HexColor('#1E293B'), spaceBefore=6, spaceAfter=4)
+    style_h2 = ParagraphStyle('DocH2', parent=styles['Heading2'], fontSize=10.5, leading=12, textColor=colors.HexColor('#1E293B'), spaceBefore=8, spaceAfter=4)
     style_cell = ParagraphStyle('DocCell', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=colors.HexColor('#0F172A'), alignment=1)
     style_cell_left = ParagraphStyle('DocCellLeft', parent=style_cell, alignment=0)
     style_cell_bold = ParagraphStyle('DocCellBold', parent=style_cell, fontName='Helvetica-Bold')
@@ -378,15 +449,94 @@ def generar_pdf_dinamico(resultados_df, tipo, monto, dias, map_riesgo):
         ('BOTTOMPADDING', (0,0), (-1,-1), 3.5),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
     ]))
-
     story.append(t_results)
+    story.append(Spacer(1, 10))
+
+    # --- SECCIÓN TASAS REFERENCIALES BANCO CENTRAL EN PDF ---
+    if datos_ref:
+        story.append(Paragraph("🏦 Tasas Referenciales Banco Central & Indicadores", style_h2))
+        
+        # Tabla 1: Referencial Actual y Promedio Anual
+        ref_kpi_data1 = [
+            [
+                Paragraph("<b>Referencial Actual</b>", style_cell_header),
+                Paragraph(f"<b>Promedio Anual ({datos_ref['anio_kpi']})</b>", style_cell_header)
+            ],
+            [
+                Paragraph(f"<font size=10 color='#15803D'><b>{datos_ref['tasa_actual']:.2f}%</b></font><br/><font size=6.5 color='#64748B'>({datos_ref['etiqueta_mes']})</font>", style_cell),
+                Paragraph(f"<font size=10 color='#0284C7'><b>{datos_ref['tasa_promedio_anio']:.2f}%</b></font>", style_cell)
+            ]
+        ]
+        t_ref1 = Table(ref_kpi_data1, colWidths=[270, 270])
+        t_ref1.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#334155')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#F8FAFC')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(t_ref1)
+        story.append(Spacer(1, 6))
+
+        # Tabla 2: Pico Máximo, Pico Mínimo, Promedio Periodo
+        ref_kpi_data2 = [
+            [
+                Paragraph("<b>Pico Máximo</b>", style_cell_header),
+                Paragraph("<b>Pico Mínimo</b>", style_cell_header),
+                Paragraph("<b>Promedio Periodo</b>", style_cell_header)
+            ],
+            [
+                Paragraph(f"<font size=9.5 color='#15803D'><b>{datos_ref['tasa_max']:.2f}%</b></font><br/><font size=6.5 color='#64748B'>{datos_ref['fecha_max']}</font>", style_cell),
+                Paragraph(f"<font size=9.5 color='#B91C1C'><b>{datos_ref['tasa_min']:.2f}%</b></font><br/><font size=6.5 color='#64748B'>{datos_ref['fecha_min']}</font>", style_cell),
+                Paragraph(f"<font size=9.5 color='#0284C7'><b>{datos_ref['tasa_prom']:.2f}%</b></font>", style_cell)
+            ]
+        ]
+        t_ref2 = Table(ref_kpi_data2, colWidths=[180, 180, 180])
+        t_ref2.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#334155')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#F8FAFC')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        story.append(t_ref2)
+        story.append(Spacer(1, 6))
+
+        # Tabla 3: Proyección Próximo Mes y Tendencia 3 Meses
+        if datos_ref.get('tasa_1m') is not None:
+            ref_kpi_data3 = [
+                [
+                    Paragraph("<b>Proyección Próximo Mes (t+1)</b>", style_cell_header),
+                    Paragraph("<b>Tendencia 3 Meses (t+3)</b>", style_cell_header)
+                ],
+                [
+                    Paragraph(f"<font size=9.5 color='#7C3AED'><b>{datos_ref['tasa_1m']:.2f}%</b></font><br/><font size=6.5 color='#64748B'>IC 95%: {datos_ref['rango_1m']}</font>", style_cell),
+                    Paragraph(f"<font size=9.5 color='#7C3AED'><b>{datos_ref['tendencia_str']}</b></font><br/><font size=6.5 color='#64748B'>Rango: {datos_ref['rango_3m']}</font>", style_cell)
+                ]
+            ]
+            t_ref3 = Table(ref_kpi_data3, colWidths=[270, 270])
+            t_ref3.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#334155')),
+                ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#F8FAFC')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(t_ref3)
 
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
 
-def generar_pdf_bytes(df, tipo, monto, dias, map_riesgo):
-    return generar_pdf_dinamico(df, tipo, monto, dias, map_riesgo)
+def generar_pdf_bytes(df, tipo, monto, dias, map_riesgo, df_ref=None):
+    datos_ref = obtener_metricas_referenciales(df_ref) if df_ref is not None else None
+    return generar_pdf_dinamico(df, tipo, monto, dias, map_riesgo, datos_ref)
 
 def obtener_ranking_bancos(df, monto, dias, tipo='pf'):
     if df.empty or monto <= 0 or dias <= 0:
@@ -745,6 +895,7 @@ with col_btn_act:
 
 df_pf, df_ap, df_ca = cargar_datos_inversiones()
 map_riesgo = cargar_calificaciones_riesgo()
+df_ref = cargar_tasas_referenciales()
 
 if df_pf.empty and df_ap.empty and df_ca.empty:
     st.warning("No se encontraron datos de inversiones disponibles.")
@@ -780,7 +931,7 @@ with tab_pf:
                     ganador = resultados_pf.iloc[0]
                     st.success(f"🥇 **Opción Ganadora:** **{ganador['banco']}** con una TNA de **{ganador['tna']:.2f}%** y una ganancia estimada de **${ganador['ganancia_estimada']:,.2f}**")
 
-                    pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias, map_riesgo)
+                    pdf_data = generar_pdf_bytes(resultados_pf, 'pf', monto, plazo_dias, map_riesgo, df_ref)
                     if pdf_data:
                         st.download_button(label="📄 Exportar a PDF", data=pdf_data, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
                         st.markdown("<br>", unsafe_allow_html=True)
@@ -847,7 +998,7 @@ with tab_ap:
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ap['banco']} ({str(ganador_ap['producto']).title()})** con una TNA de **{ganador_ap['tna']:.2f}%**")
 
-                    pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap, map_riesgo)
+                    pdf_data_ap = generar_pdf_bytes(resultados_ap, 'ap', aporte_ap, dias_ap, map_riesgo, df_ref)
                     if pdf_data_ap:
                         st.download_button(label="📄 Exportar a PDF", data=pdf_data_ap, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
                         st.markdown("<br>", unsafe_allow_html=True)
@@ -918,7 +1069,7 @@ with tab_ca:
                     
                     st.success(f"🥇 **Opción Ganadora:** **{ganador_ca['banco']} ({str(ganador_ca['producto']).title()})** con una TNA de **{ganador_ca['tna']:.2f}%** y una ganancia estimada de **${ganador_ca['ganancia_estimada']:,.2f}**")
 
-                    pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca, map_riesgo)
+                    pdf_data_ca = generar_pdf_bytes(resultados_ca, 'ca', monto_ca, dias_ca, map_riesgo, df_ref)
                     if pdf_data_ca:
                         st.download_button(label="📄 Exportar a PDF", data=pdf_data_ca, file_name="Mejor Inversion.pdf", mime="application/pdf", use_container_width=True)
                         st.markdown("<br>", unsafe_allow_html=True)
@@ -955,7 +1106,6 @@ with tab_ca:
 st.markdown("<br><br><hr>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Tasas Referenciales Banco Central</h3>", unsafe_allow_html=True)
 
-df_ref = cargar_tasas_referenciales()
 if not df_ref.empty and len(df_ref.columns) >= 2:
     df_ref['fecha_dt'] = pd.to_datetime(df_ref.iloc[:, 0], dayfirst=True, errors='coerce')
     df_ref['tasa_val'] = limpiar_numeros(df_ref.iloc[:, 1])
